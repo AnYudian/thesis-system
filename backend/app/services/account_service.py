@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.core.security import hash_password
 from app.models.audit_log import AuditLog
-from app.models.enums import Role
+from app.models.enums import Role, TeacherType
+from app.models.student import Student
 from app.models.user import User
 from app.schemas.user import AccountCreate, AccountOut, AccountUpdate
 
@@ -63,6 +64,7 @@ def to_out(user: User, last_login_at=None) -> AccountOut:
         is_active=user.is_active,
         created_at=user.created_at,
         last_login_at=last_login_at,
+        teacher_type=user.teacher_type,  # type: ignore[arg-type]
         college=user.college,
         major=user.major,
         phone=user.phone,
@@ -71,7 +73,12 @@ def to_out(user: User, last_login_at=None) -> AccountOut:
 
 
 def _apply_filters(
-    stmt: Select, *, keyword: str | None, role: Role | None, is_active: bool | None
+    stmt: Select,
+    *,
+    keyword: str | None,
+    role: Role | None,
+    is_active: bool | None,
+    teacher_type: TeacherType | None = None,
 ) -> Select:
     if keyword:
         like = f"%{keyword.strip()}%"
@@ -80,6 +87,9 @@ def _apply_filters(
         stmt = stmt.where(User.role == role.value)
     if is_active is not None:
         stmt = stmt.where(User.is_active.is_(is_active))
+    if teacher_type is not None:
+        # 只看教师身份时不额外加 role 条件：teacher_type 本身只存在于教师行
+        stmt = stmt.where(User.teacher_type == teacher_type.value)
     return stmt
 
 
@@ -91,8 +101,14 @@ async def list_accounts(
     keyword: str | None = None,
     role: Role | None = None,
     is_active: bool | None = None,
+    teacher_type: TeacherType | None = None,
 ) -> tuple[list[AccountOut], int]:
-    filters = {"keyword": keyword, "role": role, "is_active": is_active}
+    filters = {
+        "keyword": keyword,
+        "role": role,
+        "is_active": is_active,
+        "teacher_type": teacher_type,
+    }
     total = await db.scalar(
         _apply_filters(select(func.count()).select_from(User), **filters)
     ) or 0
@@ -152,6 +168,7 @@ async def create_account(db: AsyncSession, data: AccountCreate) -> tuple[User, s
     if data.role is Role.TEACHER:
         # 手机号/QQ 先做格式校验再落库，避免以后按号码加人时混进无法使用的数据
         _ensure_contact_format(_clean(data.phone), _clean(data.qq))
+        user.teacher_type = data.teacher_type.value
         user.college = _clean(data.college)
         user.major = _clean(data.major)
         user.phone = _clean(data.phone)
@@ -186,6 +203,24 @@ async def update_account(
 
     if data.real_name is not None:
         account.real_name = data.real_name
+
+    if account.role == Role.TEACHER.value and data.teacher_type is not None:
+        # 指导教师改成评阅教师前必须名下无人：否则这些学生既没导师审环节，
+        # 也会从「指派导师」列表里消失，等于把人卡在半路
+        if (
+            data.teacher_type is TeacherType.REVIEWER
+            and account.teacher_type != TeacherType.REVIEWER.value
+        ):
+            student_count = await db.scalar(
+                select(func.count()).select_from(Student).where(Student.teacher_id == account.id)
+            ) or 0
+            if student_count:
+                raise AppError(
+                    42238,
+                    f"该教师名下还有 {student_count} 名学生，请先改派导师再改为评阅教师",
+                    http_status=422,
+                )
+        account.teacher_type = data.teacher_type.value
 
     # 四项档案都用"传了才改"的语义；管理员改教师资料时前端会把四项一起提交
     if data.college is not None:

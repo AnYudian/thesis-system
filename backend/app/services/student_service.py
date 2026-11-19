@@ -13,7 +13,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.exceptions import AppError
 from app.core.security import hash_password
-from app.models.enums import Role, Stage, StudentStatus
+from app.models.enums import Role, Stage, StudentStatus, TeacherType
 from app.models.student import Student
 from app.models.topic import Topic
 from app.models.user import User
@@ -172,6 +172,8 @@ async def _validate_teacher(db: AsyncSession, teacher_id: int) -> None:
     teacher = await db.get(User, teacher_id)
     if teacher is None or teacher.role != Role.TEACHER.value:
         raise AppError(42201, "指导教师不存在或不是教师账号", http_status=422)
+    if teacher.teacher_type != TeacherType.SUPERVISOR.value:
+        raise AppError(42203, "该账号是评阅教师，不能带学生", http_status=422)
     if not teacher.is_active:
         raise AppError(42202, "该教师账号已停用，不能指派", http_status=422)
 
@@ -417,6 +419,7 @@ async def import_students(
                 select(User.id, User.username).where(
                     User.username.in_(wanted_teachers),
                     User.role == Role.TEACHER.value,
+                    User.teacher_type == TeacherType.SUPERVISOR.value,
                     User.is_active.is_(True),
                 )
             )
@@ -434,7 +437,7 @@ async def import_students(
                 ImportErrorItem(
                     line=line_no,
                     content=content,
-                    reason=f"指导教师账号 {teacher_username} 不存在或已停用",
+                    reason=f"指导教师账号 {teacher_username} 不存在、已停用或不是指导教师",
                 )
             )
             continue
@@ -486,6 +489,8 @@ async def assign_teacher(
     teacher = await db.get(User, teacher_id)
     if teacher is None or teacher.role != Role.TEACHER.value:
         raise AppError(42201, "指导教师不存在或不是教师账号", http_status=422)
+    if teacher.teacher_type != TeacherType.SUPERVISOR.value:
+        raise AppError(42203, "该账号是评阅教师，不能带学生", http_status=422)
     if not teacher.is_active:
         raise AppError(42202, "该教师账号已停用，不能指派", http_status=422)
 

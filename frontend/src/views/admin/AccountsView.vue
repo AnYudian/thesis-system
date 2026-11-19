@@ -3,7 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 
-import { accountsApi, type Account, type AccountRole } from '@/api/accounts'
+import { accountsApi, type Account, type AccountRole, type TeacherType } from '@/api/accounts'
+import { TEACHER_TYPES } from '@/constants/teachers'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 
@@ -18,6 +19,7 @@ const query = reactive({
   size: 10,
   keyword: '',
   role: '' as AccountRole | '',
+  teacher_type: '' as TeacherType | '',
   active: '' as '' | 'true' | 'false',
 })
 
@@ -38,6 +40,9 @@ const activeCount = computed(() => items.value.filter((u) => u.is_active).length
 const roleLabel = (role: string) => roleLabels[role as AccountRole] ?? role
 const roleTag = (role: string) => roleTagType[role as AccountRole] ?? 'info'
 
+const teacherTypeText = (value: string | null) =>
+  TEACHER_TYPES.find((t) => t.value === value)?.label ?? '指导教师'
+
 async function load() {
   loading.value = true
   try {
@@ -46,6 +51,7 @@ async function load() {
       size: query.size,
       keyword: query.keyword || undefined,
       role: query.role || undefined,
+      teacher_type: query.teacher_type || undefined,
       is_active: query.active === '' ? undefined : query.active === 'true',
     })
     items.value = data.items
@@ -63,6 +69,7 @@ function search() {
 function reset() {
   query.keyword = ''
   query.role = ''
+  query.teacher_type = ''
   query.active = ''
   search()
 }
@@ -77,6 +84,7 @@ const form = reactive({
   username: '',
   real_name: '',
   role: 'TEACHER' as 'TEACHER' | 'ADMIN',
+  teacher_type: 'SUPERVISOR' as TeacherType,
   password: '',
   college: '',
   major: '',
@@ -144,6 +152,7 @@ function resetForm() {
     username: '',
     real_name: '',
     role: 'TEACHER',
+    teacher_type: 'SUPERVISOR',
     password: '',
     college: '',
     major: '',
@@ -166,6 +175,7 @@ function openEdit(row: Account) {
     username: row.username,
     real_name: row.real_name ?? '',
     role: row.role === 'ADMIN' ? 'ADMIN' : 'TEACHER',
+    teacher_type: row.teacher_type ?? 'SUPERVISOR',
     password: '',
     college: row.college ?? '',
     major: row.major ?? '',
@@ -197,18 +207,20 @@ async function submitAccount() {
         username: form.username.trim(),
         real_name: form.real_name.trim(),
         role: form.role,
+        teacher_type: form.teacher_type,
         password: form.password || null,
         ...profile,
       })
       dialogVisible.value = false
       await ElMessageBox.alert(
-        `账号 ${res.user.username}\n初始密码 ${res.initial_password}\n\n请转告本人，登录后即可使用。`,
+        `账号 ${res.user.username}\n身份 ${teacherTypeText(res.user.teacher_type)}\n初始密码 ${res.initial_password}\n\n请转告本人，登录后即可使用。`,
         '教师账号已创建',
         { confirmButtonText: '知道了', type: 'success' },
       )
     } else if (editingId.value) {
       await accountsApi.update(editingId.value, {
         real_name: form.real_name.trim(),
+        teacher_type: form.role === 'TEACHER' ? form.teacher_type : undefined,
         ...profile,
       })
       dialogVisible.value = false
@@ -280,7 +292,7 @@ onMounted(load)
         <p class="eyebrow">ACCOUNTS</p>
         <h2>账号管理</h2>
         <p class="sub">
-          教师账号在这里创建；学生账号随「学生与课题」建档自动开通，管理员只保留内置的这一个。停用只禁止登录，历史记录全部保留。
+          教师账号在这里创建，分「指导教师」和「评阅教师」两类：指导教师带学生、做阶段审核，评阅教师不带学生。学生账号随「学生与课题」建档自动开通，管理员只保留内置的这一个。
         </p>
       </div>
       <el-button type="primary" :icon="Plus" @click="openCreate">新建账号</el-button>
@@ -300,6 +312,15 @@ onMounted(load)
         <el-option label="管理员" value="ADMIN" />
         <el-option label="教师" value="TEACHER" />
         <el-option label="学生" value="STUDENT" />
+      </el-select>
+      <el-select
+        v-model="query.teacher_type"
+        class="tool-select"
+        placeholder="教师身份"
+        clearable
+        @change="search"
+      >
+        <el-option v-for="t in TEACHER_TYPES" :key="t.value" :label="t.label" :value="t.value" />
       </el-select>
       <el-select v-model="query.active" class="tool-select" placeholder="全部状态" clearable @change="search">
         <el-option label="启用" value="true" />
@@ -329,11 +350,14 @@ onMounted(load)
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="角色" width="84">
+        <el-table-column label="角色 / 身份" width="108">
           <template #default="{ row }">
             <el-tag :type="roleTag(row.role)" effect="plain" size="small">
               {{ roleLabel(row.role) }}
             </el-tag>
+            <span v-if="row.role === 'TEACHER'" class="cell-sub">
+              {{ teacherTypeText(row.teacher_type) }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="联系方式" width="148">
@@ -435,6 +459,19 @@ onMounted(load)
           </el-tag>
         </el-form-item>
         <template v-if="form.role === 'TEACHER'">
+          <el-form-item label="教师身份" prop="teacher_type">
+            <el-select v-model="form.teacher_type" style="width: 100%">
+              <el-option
+                v-for="t in TEACHER_TYPES"
+                :key="t.value"
+                :label="t.label"
+                :value="t.value"
+              >
+                <span>{{ t.label }}</span>
+                <span class="opt-hint">{{ t.hint }}</span>
+              </el-option>
+            </el-select>
+          </el-form-item>
           <el-form-item label="学院" prop="college">
             <el-input v-model="form.college" placeholder="如 计算机学院" />
           </el-form-item>
@@ -453,7 +490,7 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <p class="dialog-note">
-        教师档案（学院 / 专业 / 手机号 / QQ）为必填：指导记录和中期检查都需要能联系到指导教师。
+        指导教师可被指派学生并做阶段审核；评阅教师不带学生，评阅任务等流程确定后开放。教师档案（学院 / 专业 / 手机号 / QQ）为必填：指导记录和中期检查都需要能联系到指导教师。
       </p>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -615,6 +652,13 @@ onMounted(load)
 .role-fixed {
   font-size: 13px;
   color: var(--th-primary-deep);
+}
+
+/* 下拉项右侧的责任说明，选身份时不用再去别处看解释 */
+.opt-hint {
+  margin-left: 12px;
+  font-size: 11.5px;
+  color: var(--th-text-muted);
 }
 
 .dialog-note {

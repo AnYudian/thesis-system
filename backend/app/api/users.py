@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.api.deps import DBDep, require_role
 from app.core.response import ApiResponse, ok
-from app.models.enums import Role
+from app.models.enums import Role, TeacherType
 from app.models.user import User
 from app.schemas.auth import UserOut
 from app.schemas.user import (
@@ -31,12 +31,17 @@ router = APIRouter(prefix="/users", tags=["账号管理"])
 AdminUser = Annotated[User, Depends(require_role(Role.ADMIN))]
 
 
-@router.get("/teachers", response_model=ApiResponse[list[UserOut]], summary="教师列表（仅管理员，用于指派导师）")
+@router.get("/teachers", response_model=ApiResponse[list[UserOut]], summary="指导教师列表（仅管理员，用于指派导师）")
 async def list_teachers(db: DBDep, _: AdminUser) -> ApiResponse[list[UserOut]]:
+    # 只返回指导教师：评阅教师不带学生，出现在指派下拉里会被误选
     users = (
         await db.scalars(
             select(User)
-            .where(User.role == Role.TEACHER.value, User.is_active.is_(True))
+            .where(
+                User.role == Role.TEACHER.value,
+                User.teacher_type == TeacherType.SUPERVISOR.value,
+                User.is_active.is_(True),
+            )
             .order_by(User.id)
         )
     ).all()
@@ -51,10 +56,17 @@ async def list_accounts(
     size: Annotated[int, Query(ge=1, le=100)] = 20,
     keyword: Annotated[str | None, Query(max_length=50)] = None,
     role: Annotated[Role | None, Query()] = None,
+    teacher_type: Annotated[TeacherType | None, Query()] = None,
     is_active: Annotated[bool | None, Query()] = None,
 ) -> ApiResponse[AccountPage]:
     items, total = await svc.list_accounts(
-        db, page=page, size=size, keyword=keyword, role=role, is_active=is_active
+        db,
+        page=page,
+        size=size,
+        keyword=keyword,
+        role=role,
+        is_active=is_active,
+        teacher_type=teacher_type,
     )
     return ok(AccountPage(items=items, total=total, page=page, size=size))
 
@@ -70,7 +82,7 @@ async def create_account(
         action="ACCOUNT_CREATE",
         target_type="USER",
         target_id=user.id,
-        detail={"username": user.username, "role": user.role},
+        detail={"username": user.username, "role": user.role, "teacher_type": user.teacher_type},
     )
     return ok(
         AccountCreated(user=svc.to_out(user), initial_password=password),
@@ -95,6 +107,7 @@ async def update_account(
             "username": account.username,
             "is_active": account.is_active,
             "was_active": before_active,
+            "teacher_type": account.teacher_type,
         },
     )
     message = "已停用该账号" if before_active and not account.is_active else "已保存"

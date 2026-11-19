@@ -1,12 +1,15 @@
 import { get, post } from './http'
 
 export type Role = 'ADMIN' | 'TEACHER' | 'STUDENT'
+export type TeacherType = 'SUPERVISOR' | 'REVIEWER'
 
 export interface UserInfo {
   id: number
   username: string
   real_name: string | null
   role: Role
+  /** 仅教师有值：指导教师 / 评阅教师 */
+  teacher_type?: TeacherType | null
 }
 
 export interface LoginResult {

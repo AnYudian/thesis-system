@@ -1,6 +1,7 @@
 import { get, patch, post } from './http'
 
 export type AccountRole = 'ADMIN' | 'TEACHER' | 'STUDENT'
+export type TeacherType = 'SUPERVISOR' | 'REVIEWER'
 
 export interface Account {
   id: number
@@ -10,6 +11,7 @@ export interface Account {
   is_active: boolean
   created_at: string
   last_login_at: string | null
+  teacher_type: TeacherType | null
   college: string | null
   major: string | null
   phone: string | null
@@ -28,6 +30,7 @@ export interface AccountQuery {
   size?: number
   keyword?: string
   role?: AccountRole
+  teacher_type?: TeacherType
   is_active?: boolean
 }
 
@@ -35,6 +38,7 @@ export interface AccountForm {
   username: string
   real_name: string
   role: 'TEACHER' | 'ADMIN'
+  teacher_type?: TeacherType
   password?: string | null
   college?: string | null
   major?: string | null
@@ -51,6 +55,7 @@ export const accountsApi = {
     body: {
       real_name?: string
       is_active?: boolean
+      teacher_type?: TeacherType
       college?: string | null
       major?: string | null
       phone?: string | null

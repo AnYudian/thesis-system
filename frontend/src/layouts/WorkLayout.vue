@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
+import { teacherTypeLabel } from '@/constants/teachers'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -12,12 +13,19 @@ const pwdVisible = ref(false)
 
 const roleLabel = computed(() => {
   const map = { ADMIN: '管理员', TEACHER: '教师', STUDENT: '学生' } as const
+  // 教师的顶栏直接写出是哪一类，管理员看截图/现场演示时不用再问
+  if (auth.role === 'TEACHER') return teacherTypeLabel(auth.teacherType)
   return auth.role ? map[auth.role] : ''
 })
 
 // 教师和学生共用同一个外壳，只是导航项不同；管理员的导航在 AdminLayout 里
 const nav = computed(() => {
   if (auth.role === 'TEACHER') {
+    // 评阅教师暂时没有可做的事：只留工作台，等评阅任务定义好再开放入口，
+    // 避免点进「阶段审核」看到空列表以为系统坏了
+    if (auth.teacherType === 'REVIEWER') {
+      return [{ to: '/', title: '工作台', exact: true }]
+    }
     return [
       { to: '/', title: '工作台', exact: true },
       { to: '/my-students', title: '我的学生' },

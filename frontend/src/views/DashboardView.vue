@@ -5,19 +5,26 @@ import { useRouter } from 'vue-router'
 import { reviewsApi, type PendingItem } from '@/api/reviews'
 import { studentsApi, type Student } from '@/api/students'
 import { STAGES } from '@/constants/stages'
+import { teacherTypeLabel } from '@/constants/teachers'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
 
 const isTeacher = computed(() => auth.role === 'TEACHER')
+// 评阅教师目前没有任务可做：工作台单独给一页说明，不摆九张空卡片
+const isReviewer = computed(() => isTeacher.value && auth.teacherType === 'REVIEWER')
 
 const roleLabel = computed(() => {
   const map = { ADMIN: '管理员', TEACHER: '教师', STUDENT: '学生' } as const
+  if (auth.role === 'TEACHER') return teacherTypeLabel(auth.teacherType)
   return auth.role ? map[auth.role] : ''
 })
 
 const roleIntro = computed(() => {
+  if (isReviewer.value) {
+    return '评阅教师：不带学生、不参与阶段审核；评阅任务等学校确定分配方式后开放。'
+  }
   const map = {
     ADMIN: '全局视角：维护账号与学生档案，查看全部材料、进度与统计。',
     TEACHER: '负责所带学生的阶段审核，决定是否放行进入下一阶段。',
@@ -101,7 +108,8 @@ async function loadAllStudents() {
 }
 
 onMounted(async () => {
-  if (!isTeacher.value) return
+  // 评阅教师没有名下学生，跳过这两次请求，免得工作台空转
+  if (!isTeacher.value || isReviewer.value) return
   loading.value = true
   try {
     const [pendingRows] = await Promise.all([reviewsApi.pending(), loadAllStudents()])
@@ -114,7 +122,7 @@ onMounted(async () => {
 
 <template>
   <!-- 教师工作台：一进来先看九个环节各自积压了多少人、多少份待审 -->
-  <div v-if="isTeacher" v-loading="loading" class="page">
+  <div v-if="isTeacher && !isReviewer" v-loading="loading" class="page">
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">2026 届 · 毕业论文（设计）全过程</p>
@@ -187,6 +195,34 @@ onMounted(async () => {
 
     <p class="note">
       当前身份：{{ roleLabel }}（账号 {{ auth.user?.username }}）。点击环节卡片进入阶段审核，并自动筛好该环节。
+    </p>
+  </div>
+
+  <!-- 评阅教师：暂时没有评阅任务，先把身份和后续安排说清楚 -->
+  <div v-else-if="isReviewer" class="page">
+    <section class="hero hero--plain">
+      <p class="eyebrow">评阅教师 · 2026 届</p>
+      <h2>{{ auth.displayName }}，欢迎回来</h2>
+      <p class="lede">{{ roleIntro }}</p>
+
+      <div class="workflow">
+        <span class="flow-label">流程</span>
+        <template v-for="(item, index) in STAGES" :key="item.code">
+          <span class="flow-node">{{ item.short }}</span>
+          <span v-if="index < STAGES.length - 1" class="flow-arrow">→</span>
+        </template>
+      </div>
+
+      <div class="reviewer-box">
+        <strong>目前还没有分配给你的评阅任务</strong>
+        <p>
+          现在阶段审核由指导教师完成。等学校确定评阅由哪类教师负责、怎么分配论文后，这里会出现待评阅清单与打分入口。
+        </p>
+      </div>
+    </section>
+
+    <p class="note">
+      当前身份：评阅教师（账号 {{ auth.user?.username }}）。如果你实际需要带学生、做阶段审核，请联系管理员把身份改为指导教师。
     </p>
   </div>
 
@@ -516,6 +552,29 @@ onMounted(async () => {
   flex-direction: column;
   align-items: flex-start;
   gap: 0;
+}
+
+/* 评阅教师的说明块放在深色题头里，沿用左侧竖线的“提示条”样式 */
+.reviewer-box {
+  margin-top: 22px;
+  padding: 13px 16px;
+  background: rgba(245, 239, 225, 0.06);
+  border-left: 3px solid var(--th-accent);
+}
+
+.reviewer-box strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f3e9d2;
+}
+
+.reviewer-box p {
+  max-width: 620px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: rgba(245, 239, 225, 0.72);
 }
 
 .workflow {

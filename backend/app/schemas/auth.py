@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import Role
+from app.models.enums import Role, TeacherType
 
 
 class LoginRequest(BaseModel):
@@ -15,6 +15,8 @@ class UserOut(BaseModel):
     username: str
     real_name: str | None = None
     role: Role
+    # 教师身份随登录返回：前端据此决定工作台提示和顶栏标识
+    teacher_type: TeacherType | None = None
     # 教师档案随账号返回：前端指派导师、详情页展示联系方式都直接用它
     college: str | None = None
     major: str | None = None
