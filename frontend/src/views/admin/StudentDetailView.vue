@@ -85,6 +85,74 @@ const midtermProgress = computed(() => {
   }
 })
 
+// 中期检查的 10 次要求只在学生进入这一环节后才有意义：
+// 前三个环节就摆一条"还差 10 次"，老师会误以为学生被卡住了
+const midtermIndex = STAGES.findIndex((s) => s.code === 'MIDTERM')
+const midtermPhase = computed<'BEFORE' | 'AT' | 'AFTER'>(() => {
+  const d = detail.value
+  if (!d) return 'BEFORE'
+  if (d.status === 'ARCHIVED') return 'AFTER'
+  if (currentIndex.value < 0) return 'BEFORE'
+  if (currentIndex.value === midtermIndex) return 'AT'
+  return currentIndex.value < midtermIndex ? 'BEFORE' : 'AFTER'
+})
+
+// 详情页拉的是该生全部材料，老师真正要处理的是"当前环节"这一批，
+// 所以单独挑出来并排到表格最上面
+const currentStageMaterials = computed(() => {
+  const stage = detail.value?.current_stage
+  return stage ? materials.value.filter((m) => m.stage === stage) : []
+})
+
+// 同一份材料可能交了 v1、v2，判断"要不要看"只认最新版
+const currentStageLatest = computed(() => {
+  const latest = new Map<string, Material>()
+  for (const m of currentStageMaterials.value) {
+    const old = latest.get(m.title)
+    if (!old || m.version > old.version) latest.set(m.title, m)
+  }
+  return [...latest.values()]
+})
+
+// 本环节最近一次审核时间：这之后上传的才是"学生新交的、老师还没看过"
+const currentStageReviewAt = computed<Date | null>(() => {
+  const stage = detail.value?.current_stage
+  if (!stage) return null
+  const times = reviews.value
+    .filter((r) => r.from_stage === stage)
+    .map((r) => new Date(r.created_at).getTime())
+  return times.length ? new Date(Math.max(...times)) : null
+})
+
+const isNewMaterial = (m: Material) => {
+  if (!detail.value || m.stage !== detail.value.current_stage) return false
+  return !currentStageReviewAt.value || new Date(m.created_at) > currentStageReviewAt.value
+}
+
+const newMaterials = computed(() => currentStageLatest.value.filter(isNewMaterial))
+const newMaterialTitles = computed(() => newMaterials.value.map((m) => m.title).join('、'))
+const newMaterialAt = computed(() => {
+  if (!newMaterials.value.length) return ''
+  const ts = Math.max(...newMaterials.value.map((m) => new Date(m.created_at).getTime()))
+  return new Date(ts).toISOString()
+})
+const lastReviewedText = computed(() =>
+  currentStageReviewAt.value ? formatTime(currentStageReviewAt.value.toISOString()) : '',
+)
+
+// 本环节材料置顶，其余按上传时间倒序，找历史版本时也不用来回翻
+const sortedMaterials = computed(() => {
+  const stage = detail.value?.current_stage
+  return [...materials.value].sort((a, b) => {
+    const aCurrent = a.stage === stage ? 0 : 1
+    const bCurrent = b.stage === stage ? 0 : 1
+    if (aCurrent !== bCurrent) return aCurrent - bCurrent
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
+})
+
+const materialRowClass = ({ row }: { row: Material }) => (isNewMaterial(row) ? 'row-new' : '')
+
 // 管理员看的是"过程有没有真的发生"：面谈几次、线上几次、留了几张证据，
 // 这些比一句"已完成指导"更能说明问题，所以放在明细表上方先给个汇总。
 const guidanceStats = computed(() => {
@@ -242,16 +310,25 @@ onMounted(loadAll)
         <header class="panel-head">
           <h3>本环节审核</h3>
           <p>
-            当前：{{ stageLabel(detail.current_stage) }} · 材料 {{ materials.length }} 份 ·
+            当前：{{ stageLabel(detail.current_stage) }} · 本环节材料 {{ currentStageLatest.length }} 份 ·
             指导 {{ guidanceStats.total }} 次；看完下方材料与历史后再决定
           </p>
         </header>
         <div class="action-row">
-          <p v-if="approveBlocked" class="action-warn">
-            中期检查要求指导记录满 {{ summary?.midterm_required ?? 10 }} 次，当前只有
-            {{ summary?.midterm_count ?? 0 }} 次，先补齐再通过；也可以直接退回让学生完善。
-          </p>
-          <p v-else class="action-hint">通过后学生进入下一环节；退回必须写明要改的地方。</p>
+          <div class="action-notes">
+            <p v-if="approveBlocked" class="action-warn">
+              中期检查要求指导记录满 {{ summary?.midterm_required ?? 10 }} 次，当前只有
+              {{ summary?.midterm_count ?? 0 }} 次，先补齐再通过；也可以直接退回让学生完善。
+            </p>
+            <p v-if="newMaterials.length" class="action-new">
+              学生在 {{ formatTime(newMaterialAt) }} 新提交了 {{ newMaterials.length }} 份材料（{{
+                newMaterialTitles
+              }}），表格里已标黄置顶，建议先下载核对再决定。
+            </p>
+            <p v-if="!approveBlocked && !newMaterials.length" class="action-hint">
+              通过后学生进入下一环节；退回必须写明要改的地方。
+            </p>
+          </div>
           <div class="action-btns">
             <el-tooltip
               :disabled="!approveBlocked"
@@ -273,13 +350,33 @@ onMounted(loadAll)
         <header class="panel-head">
           <h3>指导记录</h3>
           <p>
-            中期检查要求教师指导满
-            <b>{{ summary?.midterm_required ?? 10 }}</b> 次；共 {{ guidanceStats.total }} 条明细，
+            <template v-if="midtermPhase === 'BEFORE'">
+              学生还没进入中期检查；
+            </template>
+            <template v-else-if="midtermPhase === 'AT'">
+              中期检查要求教师指导满 <b>{{ summary?.midterm_required ?? 10 }}</b> 次；
+            </template>
+            <template v-else>中期检查已通过；</template>
+            共 {{ guidanceStats.total }} 条明细，
             面谈 {{ guidanceStats.meet }} 次、线上 {{ guidanceStats.online }} 次、附证据 {{ guidanceStats.evidence }} 条
           </p>
         </header>
 
-        <div v-if="midtermProgress" class="midterm-bar">
+        <div v-if="midtermPhase === 'BEFORE'" class="midterm-idle">
+          <span class="midterm-idle-title">中期检查：未开始</span>
+          <span class="midterm-idle-note">
+            该环节要求指导满 {{ summary?.midterm_required ?? 10 }} 次，进入后才统计，当前不参与通过校验
+          </span>
+        </div>
+
+        <div v-else-if="midtermPhase === 'AFTER'" class="midterm-idle is-done">
+          <span class="midterm-idle-title">中期检查：已通过</span>
+          <span class="midterm-idle-note">
+            该环节共留痕 {{ midtermProgress?.done ?? 0 }} 条指导记录
+          </span>
+        </div>
+
+        <div v-else-if="midtermProgress" class="midterm-bar">
           <div class="midterm-head">
             <span>中期检查：{{ midtermProgress.done }} / {{ midtermProgress.required }} 次</span>
             <span class="midterm-state" :class="{ 'is-ok': midtermProgress.reached }">
@@ -349,15 +446,42 @@ onMounted(loadAll)
       <section class="panel">
         <header class="panel-head">
           <h3>阶段材料</h3>
-          <p>共 {{ materials.length }} 份（含历次版本）</p>
+          <p>
+            共 {{ materials.length }} 份（含历次版本）
+            <template v-if="currentStageLatest.length">
+              · 本环节（{{ stageShort(detail.current_stage) }}）{{ currentStageLatest.length }} 份，
+              <b v-if="newMaterials.length" class="new-count">
+                其中 {{ newMaterials.length }} 份学生新提交待核对
+              </b>
+              <template v-else-if="lastReviewedText">已于 {{ lastReviewedText }} 核对过</template>
+              <template v-else>还没有审核记录</template>
+            </template>
+            <template v-else>· 本环节还没有材料</template>
+          </p>
         </header>
-        <el-table :data="materials" stripe row-key="id" class="inner-table">
-          <el-table-column label="环节" width="150">
-            <template #default="{ row }">{{ stageShort(row.stage) }}</template>
+        <el-table
+          :data="sortedMaterials"
+          stripe
+          row-key="id"
+          class="inner-table"
+          :row-class-name="materialRowClass"
+        >
+          <el-table-column label="环节" width="164">
+            <template #default="{ row }">
+              <span>{{ stageShort(row.stage) }}</span>
+              <el-tag v-if="row.stage === detail.current_stage" class="tag-current" size="small" effect="plain">
+                本环节
+              </el-tag>
+            </template>
           </el-table-column>
           <el-table-column label="材料" min-width="220">
             <template #default="{ row }">
-              <span class="cell-main">{{ row.title }}</span>
+              <span class="cell-main">
+                {{ row.title }}
+                <el-tag v-if="isNewMaterial(row)" class="tag-new" size="small" type="warning" effect="plain">
+                  新提交
+                </el-tag>
+              </span>
               <span class="cell-sub">{{ row.file_name }} · {{ fileSize(row.file_size) }}</span>
             </template>
           </el-table-column>
@@ -543,10 +667,24 @@ onMounted(loadAll)
   gap: 16px;
 }
 
+.action-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
 .action-hint {
   margin: 0;
   font-size: 12.5px;
   color: var(--th-text-muted);
+}
+
+/* 新提交用金棕色，和流程条上的强调色一致，不刺眼但扫得到 */
+.action-new {
+  margin: 0;
+  font-size: 12.5px;
+  color: #8a6a25;
 }
 
 .action-warn {
@@ -640,6 +778,42 @@ onMounted(loadAll)
   padding: 12px 14px;
   background: rgba(198, 168, 107, 0.08);
   border-left: 3px solid var(--th-accent);
+}
+
+/* 未到中期检查时给一条中性说明，不制造"还差几次"的紧迫感 */
+.midterm-idle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+  background: rgba(29, 51, 84, 0.03);
+  border-left: 3px solid var(--th-border);
+}
+
+.midterm-idle-title {
+  font-family: var(--th-font-serif);
+  color: var(--th-primary-deep);
+}
+
+.midterm-idle.is-done {
+  background: rgba(47, 107, 79, 0.06);
+  border-left-color: #2f6b4f;
+}
+
+.midterm-idle.is-done .midterm-idle-title {
+  color: #2f6b4f;
+}
+
+.new-count {
+  color: #8a6a25;
+}
+
+.tag-current,
+.tag-new {
+  margin-left: 6px;
 }
 
 .midterm-head {
@@ -792,5 +966,14 @@ onMounted(loadAll)
 :deep(.el-table) {
   --el-table-border-color: var(--th-border-soft);
   --el-table-row-hover-bg-color: rgba(198, 168, 107, 0.08);
+}
+
+/* 学生新提交的材料整行淡金底，和列表页的"待审核"行保持同一套视觉语言 */
+:deep(.el-table__row.row-new td.el-table__cell) {
+  background: rgba(198, 168, 107, 0.16);
+}
+
+:deep(.el-table__row.row-new:hover td.el-table__cell) {
+  background: rgba(198, 168, 107, 0.24);
 }
 </style>
