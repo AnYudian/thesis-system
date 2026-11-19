@@ -75,10 +75,15 @@ export const guidanceApi = {
 
   remove: (id: number) => del<null>(`/guidance/${id}`),
 
-  /** 证据同样要带 token 取 blob，拿到临时地址再新窗口打开 */
-  async openEvidence(record: GuidanceRecord) {
+  /** 证据接口要带 token，只能先取 blob 再转成浏览器能显示的临时地址 */
+  async evidenceUrl(record: GuidanceRecord): Promise<string> {
     const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
+    return URL.createObjectURL(res.data as Blob)
+  },
+
+  /** PDF 这类没法直接内嵌预览的，仍然新窗口打开 */
+  async openEvidence(record: GuidanceRecord) {
+    const url = await guidanceApi.evidenceUrl(record)
     window.open(url, '_blank')
     // 新窗口已经接管这张图，稍后回收即可，避免内存里堆 blob
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)

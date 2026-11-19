@@ -136,10 +136,17 @@ onMounted(load)
 
           <ul v-if="data?.recent_logins.length" class="logins">
             <li v-for="item in data.recent_logins" :key="item.id">
-              <span class="login-avatar">{{ (item.real_name || item.username).slice(0, 1) }}</span>
+              <span class="login-avatar" :class="`is-${item.role.toLowerCase()}`">
+                {{ (item.real_name || item.username).slice(0, 1) }}
+              </span>
               <div class="login-main">
                 <strong>{{ item.real_name || item.username }}</strong>
-                <span class="login-meta">{{ item.username }} · {{ roleLabel[item.role] || item.role }}</span>
+                <span class="login-meta">
+                  {{ item.username }} ·
+                  <em class="role" :class="`is-${item.role.toLowerCase()}`">
+                    {{ roleLabel[item.role] || item.role }}
+                  </em>
+                </span>
               </div>
               <time>{{ fmt(item.created_at) }}</time>
             </li>
@@ -486,6 +493,8 @@ onMounted(load)
   gap: 10px;
 }
 
+/* 三种角色各用一个颜色：管理员深蓝、教师金、学生绿，
+   扫一眼头像就知道这条是谁登录的，不用读文字 */
 .login-avatar {
   display: grid;
   place-items: center;
@@ -497,6 +506,38 @@ onMounted(load)
   color: var(--th-primary);
   font-family: var(--th-font-serif);
   font-size: 13px;
+}
+
+.login-avatar.is-admin {
+  background: var(--th-primary);
+  color: #f7f1e3;
+}
+
+.login-avatar.is-teacher {
+  background: #c6a86b;
+  color: #33270f;
+}
+
+.login-avatar.is-student {
+  background: #2f6b4f;
+  color: #eef6f1;
+}
+
+.role {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.role.is-admin {
+  color: var(--th-primary);
+}
+
+.role.is-teacher {
+  color: #8a6c32;
+}
+
+.role.is-student {
+  color: #2f6b4f;
 }
 
 .login-main {

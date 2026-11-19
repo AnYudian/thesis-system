@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Download } from '@element-plus/icons-vue'
 
@@ -20,6 +20,31 @@ const reviews = ref<StageReview[]>([])
 const materials = ref<Material[]>([])
 const guidance = ref<GuidanceRecord[]>([])
 const summary = ref<GuidanceSummary | null>(null)
+
+// 图片证据直接取 blob 做缩略图：管理员核对时不用每次点开新窗口再关掉。
+// 地址是临时的，离开页面要统一回收，否则切几次学生就堆一堆内存。
+const evidenceUrls = reactive<Record<number, string>>({})
+const evidenceLoaded = ref(false)
+const isImageEvidence = (type: string | null) => !!type && type.startsWith('image/')
+
+async function loadEvidencePreviews(records: GuidanceRecord[]) {
+  await Promise.all(
+    records
+      .filter((r) => r.evidence_name && isImageEvidence(r.evidence_type))
+      .map(async (r) => {
+        try {
+          evidenceUrls[r.id] = await guidanceApi.evidenceUrl(r)
+        } catch {
+          // 单张取不到就退回「查看证据」按钮，不影响其它记录
+        }
+      }),
+  )
+  evidenceLoaded.value = true
+}
+
+onBeforeUnmount(() => {
+  Object.values(evidenceUrls).forEach((url) => URL.revokeObjectURL(url))
+})
 
 const currentIndex = computed(() =>
   detail.value ? STAGES.findIndex((s) => s.code === detail.value?.current_stage) : -1,
@@ -74,6 +99,7 @@ onMounted(async () => {
     materials.value = materialPage.items
     guidance.value = guidancePage.items
     summary.value = guidanceSummary
+    await loadEvidencePreviews(guidance.value)
   } finally {
     loading.value = false
   }
@@ -206,11 +232,27 @@ onMounted(async () => {
               <span class="content-text" :title="row.content">{{ row.content }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="证据" width="100">
+          <el-table-column label="证据" width="82">
             <template #default="{ row }">
-              <el-button v-if="row.evidence_name" link type="primary" @click="guidanceApi.openEvidence(row)">
-                查看证据
-              </el-button>
+              <template v-if="row.evidence_name">
+                <el-image
+                  v-if="isImageEvidence(row.evidence_type) && evidenceUrls[row.id]"
+                  class="evidence-thumb"
+                  :src="evidenceUrls[row.id]"
+                  :preview-src-list="[evidenceUrls[row.id]]"
+                  :preview-teleported="true"
+                  fit="contain"
+                  title="点击放大"
+                />
+                <el-button
+                  v-else-if="isImageEvidence(row.evidence_type) && !evidenceLoaded"
+                  link
+                  class="muted-btn"
+                >
+                  加载中…
+                </el-button>
+                <el-button v-else link type="primary" @click="guidanceApi.openEvidence(row)">查看</el-button>
+              </template>
               <span v-else class="muted">无</span>
             </template>
           </el-table-column>
@@ -535,6 +577,21 @@ onMounted(async () => {
 
 .muted {
   font-size: 12.5px;
+  color: #9b958a;
+}
+
+.evidence-thumb {
+  width: 46px;
+  height: 46px;
+  background: #fff;
+  border: 1px solid var(--th-border);
+  border-radius: 3px;
+  cursor: zoom-in;
+}
+
+.muted-btn {
+  padding: 0;
+  font-size: 12px;
   color: #9b958a;
 }
 
