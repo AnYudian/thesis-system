@@ -16,6 +16,18 @@ router = APIRouter(prefix="/users", tags=["账号管理"])
 AdminUser = Annotated[User, Depends(require_role(Role.ADMIN))]
 
 
+@router.get("/teachers", response_model=ApiResponse[list[UserOut]], summary="教师列表（仅管理员，用于指派导师）")
+async def list_teachers(db: DBDep, _: AdminUser) -> ApiResponse[list[UserOut]]:
+    users = (
+        await db.scalars(
+            select(User)
+            .where(User.role == Role.TEACHER.value, User.is_active.is_(True))
+            .order_by(User.id)
+        )
+    ).all()
+    return ok([UserOut.model_validate(user) for user in users])
+
+
 @router.get("", response_model=ApiResponse[list[UserOut]], summary="账号列表（仅管理员）")
 async def list_users(db: DBDep, _: AdminUser) -> ApiResponse[list[UserOut]]:
     users = (await db.scalars(select(User).order_by(User.id))).all()

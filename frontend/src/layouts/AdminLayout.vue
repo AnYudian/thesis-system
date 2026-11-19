@@ -20,13 +20,19 @@ const router = useRouter()
 // 已建成的只有概览；其余按分期占位，避免做出“点了没反应”的假菜单
 const menu = [
   { title: '数据概览', icon: DataBoard, to: '/admin', ready: true },
-  { title: '学生与课题', icon: User, tag: 'P2', ready: false },
+  { title: '学生与课题', icon: User, to: '/admin/students', ready: true },
   { title: '材料中心', icon: FolderOpened, tag: 'P3', ready: false },
   { title: '阶段审核', icon: Stamp, tag: 'P4', ready: false },
   { title: '账号管理', icon: Setting, tag: 'P4', ready: false },
 ]
 
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? '管理控制台')
+
+// 概览是 /admin 本身，用前缀匹配会一直高亮，单独精确判断
+function isActive(to?: string) {
+  if (!to) return false
+  return to === '/admin' ? route.path === '/admin' : route.path.startsWith(to)
+}
 
 function logout() {
   auth.logout()
@@ -49,7 +55,7 @@ function logout() {
 
       <nav class="nav">
         <template v-for="item in menu" :key="item.title">
-          <router-link v-if="item.ready" :to="item.to!" class="nav-item" active-class="is-active">
+          <router-link v-if="item.ready" :to="item.to!" class="nav-item" :class="{ 'is-active': isActive(item.to) }">
             <el-icon><component :is="item.icon" /></el-icon>
             <span>{{ item.title }}</span>
           </router-link>
@@ -62,7 +68,7 @@ function logout() {
       </nav>
 
       <div class="side-foot">
-        <p>V0.1 · 演示数据</p>
+        <p>V0.2 · 演示数据</p>
         <p class="side-tip">管理员视角：查看全局进度与材料</p>
       </div>
     </aside>

@@ -18,9 +18,27 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'dashboard',
-      component: () => import('@/views/DashboardView.vue'),
-      meta: { title: '工作台' },
+      component: () => import('@/layouts/WorkLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'dashboard',
+          component: () => import('@/views/DashboardView.vue'),
+          meta: { title: '工作台' },
+        },
+        {
+          path: 'my-students',
+          name: 'teacher-students',
+          component: () => import('@/views/StudentsView.vue'),
+          meta: { title: '我的学生', roles: ['TEACHER'] },
+        },
+        {
+          path: 'profile',
+          name: 'student-profile',
+          component: () => import('@/views/StudentProfileView.vue'),
+          meta: { title: '我的档案', roles: ['STUDENT'] },
+        },
+      ],
     },
     {
       path: '/admin',
@@ -32,6 +50,12 @@ const router = createRouter({
           name: 'admin-overview',
           component: () => import('@/views/admin/OverviewView.vue'),
           meta: { title: '数据概览' },
+        },
+        {
+          path: 'students',
+          name: 'admin-students',
+          component: () => import('@/views/StudentsView.vue'),
+          meta: { title: '学生与课题' },
         },
       ],
     },

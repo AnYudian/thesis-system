@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.stats import router as stats_router
+from app.api.students import router as students_router
 from app.api.users import router as users_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
@@ -29,7 +30,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        description="毕业论文（设计）全过程进度跟踪与智能审阅系统。当前阶段：P1 登录与权限。",
+        description="毕业论文（设计）全过程进度跟踪与智能审阅系统。当前阶段：P2 学生与课题建档。",
         redoc_url=None,  # 只保留 /docs，少一个入口少一份维护成本
     )
 
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
     app.include_router(stats_router, prefix="/api")
+    app.include_router(students_router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
     async def index() -> ApiResponse:

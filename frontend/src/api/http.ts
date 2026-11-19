@@ -46,4 +46,19 @@ export async function post<T>(url: string, body?: unknown): Promise<T> {
   return data.data
 }
 
+export async function put<T>(url: string, body?: unknown): Promise<T> {
+  const { data } = await http.put<ApiEnvelope<T>>(url, body)
+  return data.data
+}
+
+export async function patch<T>(url: string, body?: unknown): Promise<T> {
+  const { data } = await http.patch<ApiEnvelope<T>>(url, body)
+  return data.data
+}
+
+export async function del<T>(url: string): Promise<T> {
+  const { data } = await http.delete<ApiEnvelope<T>>(url)
+  return data.data
+}
+
 export default http
