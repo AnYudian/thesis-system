@@ -58,8 +58,14 @@ export interface ReviewQuery {
   teacher_id?: number
 }
 
+export interface PendingQuery {
+  stage?: string
+  keyword?: string
+  teacher_id?: number
+}
+
 export const reviewsApi = {
-  pending: () => get<PendingItem[]>('/reviews/pending'),
+  pending: (params?: PendingQuery) => get<PendingItem[]>('/reviews/pending', params as Record<string, unknown>),
 
   list: (params?: ReviewQuery) => get<ReviewPage>('/reviews', params as Record<string, unknown>),
 

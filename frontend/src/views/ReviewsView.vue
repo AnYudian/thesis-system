@@ -4,12 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
-import {
-  reviewsApi,
-  type PendingItem,
-  type ReviewAction,
-  type StageReview,
-} from '@/api/reviews'
+import { reviewsApi, type PendingItem, type ReviewAction } from '@/api/reviews'
 import { teachersApi } from '@/api/students'
 import { STAGES, STAGE_SHORT } from '@/constants/stages'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +16,16 @@ const isAdmin = computed(() => auth.role === 'ADMIN')
 
 const loading = ref(false)
 const items = ref<PendingItem[]>([])
+
+// 一张表既是教师的待批清单，也是管理员的在途学生总览：
+// 管理员看进度和详情，教师在同一行上直接放行/退回，不再拆成两个 Tab。
+const query = reactive({
+  keyword: '',
+  stage: '',
+  teacherId: undefined as number | undefined,
+})
+
+const teachers = ref<{ id: number; real_name: string | null; username: string }[]>([])
 
 // 中期检查先看指导次数：不够 10 次时把「通过」按钮直接禁掉，
 // 后端也会再拦一次，这里只是让老师少点一次、提前知道差在哪
@@ -35,75 +40,28 @@ function openDetail(studentId: number) {
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
 const stageIndex = (code: string) => STAGES.findIndex((s) => s.code === code) + 1
 
-// ---- Tab ----
-const tab = ref<'pending' | 'history'>('pending')
-
-// ---- 流转记录 ----
-// 待处理表只关心"现在停在哪"，历史表要回答"谁在什么时候放行/退回了谁"，
-// 两者的筛选条件、分页都不同，所以拆成独立一套状态，首次切过去才请求。
-const historyLoading = ref(false)
-const historyItems = ref<StageReview[]>([])
-const historyTotal = ref(0)
-const historyLoaded = ref(false)
-const historyQuery = reactive({
-  page: 1,
-  size: 10,
-  keyword: '',
-  stage: '',
-  action: '' as '' | ReviewAction,
-  teacherId: undefined as number | undefined,
-})
-const teachers = ref<{ id: number; real_name: string | null; username: string }[]>([])
-
-async function loadHistory() {
-  historyLoading.value = true
-  try {
-    const data = await reviewsApi.list({
-      page: historyQuery.page,
-      size: historyQuery.size,
-      keyword: historyQuery.keyword || undefined,
-      stage: historyQuery.stage || undefined,
-      action: historyQuery.action || undefined,
-      teacher_id: historyQuery.teacherId,
-    })
-    historyItems.value = data.items
-    historyTotal.value = data.total
-    historyLoaded.value = true
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-function searchHistory() {
-  historyQuery.page = 1
-  loadHistory()
-}
-
-function resetHistory() {
-  historyQuery.keyword = ''
-  historyQuery.stage = ''
-  historyQuery.action = ''
-  historyQuery.teacherId = undefined
-  searchHistory()
-}
-
-function onTabChange(name: string | number) {
-  if (name === 'history' && !historyLoaded.value) loadHistory()
-}
-
-// 通过：末尾环节的 to_stage 仍是本环节，光看代码会误以为没动，这里翻成人话
-function toLabel(row: StageReview) {
-  if (row.action === 'RETURN') return '留在本环节修改'
-  return stageIndex(row.to_stage) === STAGES.length ? '归档' : stageLabel(row.to_stage)
-}
-
 async function load() {
   loading.value = true
   try {
-    items.value = await reviewsApi.pending()
+    items.value = await reviewsApi.pending({
+      keyword: query.keyword.trim() || undefined,
+      stage: query.stage || undefined,
+      teacher_id: query.teacherId,
+    })
   } finally {
     loading.value = false
   }
+}
+
+function search() {
+  load()
+}
+
+function reset() {
+  query.keyword = ''
+  query.stage = ''
+  query.teacherId = undefined
+  load()
 }
 
 // 一个弹窗复用“通过 / 退回”两种情况：字段一样，只是意见是否必填不同
@@ -138,9 +96,8 @@ async function submit() {
         : `已通过，进入「${stageLabel(result.current_stage)}」`,
     )
     dialog.visible = false
+    // 刚处理完的这一行要么换环节、要么归档，直接重拉保持表格与库里一致
     await load()
-    // 刚才的审核就是一条新历史，标记失效，下次切到历史 Tab 重新拉
-    historyLoaded.value = false
   } catch {
     // 拦截器已经弹过具体原因（比如状态已变化），这里保持弹窗打开让老师重试
   } finally {
@@ -164,37 +121,74 @@ onMounted(async () => {
         <h2>{{ isAdmin ? '阶段流转' : '阶段审核' }}</h2>
         <p class="sub">
           {{ isAdmin
-            ? '全校学生当前停留在哪一环、交了几版材料。放行由指导教师本人决定，管理员只读。'
+            ? '全校在途学生的当前进度、材料、指导与上次流转都在这一页；点姓名或「详情」可追溯完整历史。放行由指导教师本人决定，管理员只读。'
             : '学生完成当前环节后由你放行或退回。通过进入下一环节，退回必须写明要改的地方。' }}
         </p>
       </div>
       <span class="count">
-        {{ tab === 'pending' ? (isAdmin ? '进行中' : '待处理') : '流转记录' }}
-        <b>{{ tab === 'pending' ? items.length : historyTotal }}</b>
-        {{ tab === 'pending' ? '人' : '条' }}
+        {{ isAdmin ? '在途' : '待处理' }}
+        <b>{{ items.length }}</b> 人
       </span>
     </header>
 
-    <el-tabs v-model="tab" class="stage-tabs" @tab-change="onTabChange">
-      <el-tab-pane label="待处理" name="pending">
-        <section class="table-wrap">
+    <section class="toolbar">
+      <el-input
+        v-model="query.keyword"
+        class="tool-input"
+        placeholder="学生姓名或学号"
+        clearable
+        :prefix-icon="Search"
+        @keyup.enter="search"
+        @clear="search"
+      />
+      <el-select v-model="query.stage" class="tool-select" placeholder="全部环节" clearable @change="search">
+        <el-option v-for="s in STAGES" :key="s.code" :label="s.label" :value="s.code" />
+      </el-select>
+      <el-select
+        v-if="isAdmin"
+        v-model="query.teacherId"
+        class="tool-select"
+        placeholder="全部指导教师"
+        clearable
+        @change="search"
+      >
+        <el-option v-for="t in teachers" :key="t.id" :label="t.real_name || t.username" :value="t.id" />
+      </el-select>
+      <el-button :icon="Search" @click="search">查询</el-button>
+      <el-button :icon="Refresh" plain @click="reset">重置</el-button>
+    </section>
+
+    <section class="table-wrap">
       <el-table v-loading="loading" :data="items" stripe row-key="student_id">
-        <el-table-column label="学生" width="108">
+        <el-table-column label="学生" width="120">
           <template #default="{ row }">
-            <span class="cell-main">{{ row.name }}</span>
+            <el-button v-if="isAdmin" link type="primary" class="name-link" @click="openDetail(row.student_id)">
+              {{ row.name }}
+            </el-button>
+            <span v-else class="cell-main">{{ row.name }}</span>
             <span class="cell-sub">{{ row.sno }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="isAdmin" label="指导教师" width="96">
+        <el-table-column v-if="isAdmin" label="指导教师" width="100">
           <template #default="{ row }">{{ row.teacher_name || '—' }}</template>
         </el-table-column>
-        <el-table-column label="当前环节" width="150">
+        <el-table-column label="当前进度" width="182">
           <template #default="{ row }">
-            <span class="stage-pill">{{ stageLabel(row.stage) }}</span>
-            <span class="cell-sub">第 {{ stageIndex(row.stage) }} / {{ STAGES.length }} 步</span>
+            <div class="stage-line">
+              <span class="stage-pill">{{ stageLabel(row.stage) }}</span>
+              <span class="stage-step">{{ stageIndex(row.stage) }} / {{ STAGES.length }}</span>
+            </div>
+            <div class="track" :title="`已完成 ${stageIndex(row.stage) - 1} 个环节`">
+              <span
+                v-for="(s, i) in STAGES"
+                :key="s.code"
+                class="track-seg"
+                :class="{ 'is-done': i < stageIndex(row.stage) - 1, 'is-current': i === stageIndex(row.stage) - 1 }"
+              />
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="材料" width="112">
+        <el-table-column label="材料" width="118">
           <template #default="{ row }">
             <template v-if="row.material_count">
               <span class="cell-main">{{ row.material_count }} 份 · v{{ row.latest_version }}</span>
@@ -216,12 +210,13 @@ onMounted(async () => {
             <span v-else class="cell-sub">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="上次意见" min-width="180">
+        <el-table-column label="上次流转" min-width="190">
           <template #default="{ row }">
             <template v-if="row.last_action">
               <span class="opinion" :class="row.last_action === 'RETURN' ? 'is-return' : 'is-approve'">
                 {{ row.last_action === 'RETURN' ? '退回' : '通过' }}
               </span>
+              <span class="cell-sub">{{ formatTime(row.last_reviewed_at) }}</span>
               <span class="opinion-text" :title="row.last_comment || ''">
                 {{ row.last_comment || '未填写意见' }}
               </span>
@@ -245,128 +240,21 @@ onMounted(async () => {
             <el-button link type="danger" @click="open(row, 'RETURN')">退回</el-button>
           </template>
         </el-table-column>
-        <el-table-column v-if="isAdmin" label="操作" width="82" fixed="right">
+        <el-table-column v-if="isAdmin" label="操作" width="86" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row.student_id)">详情</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <p class="empty">当前没有待处理的学生。</p>
+          <p class="empty">没有符合条件的学生。</p>
         </template>
       </el-table>
 
       <div class="legend">
         <el-button :icon="Refresh" plain size="small" @click="load">刷新</el-button>
-        <span class="legend-text">共 {{ STAGES.length }} 个环节，最后一环通过后自动归档。</span>
+        <span class="legend-text">共 {{ STAGES.length }} 个环节，最后一环通过后自动归档；审核历史与指导明细在「详情」里。</span>
       </div>
-        </section>
-      </el-tab-pane>
-
-      <el-tab-pane label="流转记录" name="history">
-        <section class="toolbar">
-          <el-input
-            v-model="historyQuery.keyword"
-            class="tool-input"
-            placeholder="学生姓名或学号"
-            clearable
-            :prefix-icon="Search"
-            @keyup.enter="searchHistory"
-            @clear="searchHistory"
-          />
-          <el-select
-            v-model="historyQuery.stage"
-            class="tool-select"
-            placeholder="全部环节"
-            clearable
-            @change="searchHistory"
-          >
-            <el-option v-for="s in STAGES" :key="s.code" :label="s.label" :value="s.code" />
-          </el-select>
-          <el-select
-            v-model="historyQuery.action"
-            class="tool-select"
-            placeholder="全部动作"
-            clearable
-            @change="searchHistory"
-          >
-            <el-option label="通过" value="APPROVE" />
-            <el-option label="退回" value="RETURN" />
-          </el-select>
-          <el-select
-            v-if="isAdmin"
-            v-model="historyQuery.teacherId"
-            class="tool-select"
-            placeholder="全部指导教师"
-            clearable
-            @change="searchHistory"
-          >
-            <el-option v-for="t in teachers" :key="t.id" :label="t.real_name || t.username" :value="t.id" />
-          </el-select>
-          <el-button :icon="Search" @click="searchHistory">查询</el-button>
-          <el-button :icon="Refresh" plain @click="resetHistory">重置</el-button>
-        </section>
-
-        <section class="table-wrap">
-          <el-table v-loading="historyLoading" :data="historyItems" stripe row-key="id">
-            <el-table-column label="时间" width="156">
-              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
-            </el-table-column>
-            <el-table-column label="学生" width="110">
-              <template #default="{ row }">
-                <span class="cell-main">{{ row.student_name }}</span>
-                <span class="cell-sub">{{ row.sno }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="isAdmin" label="指导教师" width="100">
-              <template #default="{ row }">{{ row.teacher_name || '—' }}</template>
-            </el-table-column>
-            <el-table-column label="环节" width="140">
-              <template #default="{ row }">{{ stageLabel(row.stage) }}</template>
-            </el-table-column>
-            <el-table-column label="动作" width="76">
-              <template #default="{ row }">
-                <span class="opinion" :class="row.action === 'RETURN' ? 'is-return' : 'is-approve'">
-                  {{ row.action === 'RETURN' ? '退回' : '通过' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="去向" width="130">
-              <template #default="{ row }">{{ toLabel(row) }}</template>
-            </el-table-column>
-            <el-table-column label="意见" min-width="200">
-              <template #default="{ row }">
-                <span v-if="row.comment" class="opinion-text" :title="row.comment">{{ row.comment }}</span>
-                <span v-else class="cell-sub">未填写意见</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="审核人" width="92">
-              <template #default="{ row }">{{ row.reviewer_name || '—' }}</template>
-            </el-table-column>
-            <el-table-column v-if="isAdmin" label="操作" width="76">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openDetail(row.student_id)">详情</el-button>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <p class="empty">还没有审核记录。学生材料通过或退回后，这里会留下完整流水。</p>
-            </template>
-          </el-table>
-
-          <div class="pager">
-            <el-pagination
-              v-model:current-page="historyQuery.page"
-              v-model:page-size="historyQuery.size"
-              :total="historyTotal"
-              :page-sizes="[10, 20, 50]"
-              layout="sizes, prev, pager, next"
-              background
-              @current-change="loadHistory"
-              @size-change="searchHistory"
-            />
-          </div>
-        </section>
-      </el-tab-pane>
-    </el-tabs>
+    </section>
 
     <el-dialog
       v-model="dialog.visible"
@@ -477,20 +365,11 @@ onMounted(async () => {
   box-shadow: 0 6px 16px rgba(16, 31, 51, 0.05);
 }
 
-.stage-tabs :deep(.el-tabs__header) {
-  margin-bottom: 12px;
-}
-
-.stage-tabs :deep(.el-tabs__item) {
-  font-size: 14px;
-}
-
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
   padding: 12px 14px;
   background: var(--th-surface);
   border: 1px solid var(--th-border);
@@ -498,17 +377,11 @@ onMounted(async () => {
 }
 
 .tool-input {
-  width: 200px;
+  width: 220px;
 }
 
 .tool-select {
-  width: 150px;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 14px;
+  width: 160px;
 }
 
 .cell-main {
@@ -532,15 +405,56 @@ onMounted(async () => {
   color: #a33a2a;
 }
 
+.name-link {
+  height: auto;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stage-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stage-step {
+  font-size: 11.5px;
+  color: var(--th-text-muted);
+  white-space: nowrap;
+}
+
 .stage-pill {
   display: inline-block;
-  padding: 2px 8px;
-  font-size: 12px;
+  padding: 1px 6px;
+  font-size: 11.5px;
+  line-height: 18px;
   color: var(--th-primary);
   background: rgba(29, 51, 84, 0.06);
   border: 1px solid var(--th-border-soft);
   border-radius: 3px;
   white-space: nowrap;
+}
+
+.track {
+  display: flex;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.track-seg {
+  flex: 1;
+  height: 4px;
+  background: rgba(29, 51, 84, 0.1);
+  border-radius: 2px;
+}
+
+.track-seg.is-done {
+  background: rgba(47, 107, 79, 0.55);
+}
+
+.track-seg.is-current {
+  background: var(--th-accent);
 }
 
 .opinion {
@@ -565,8 +479,13 @@ onMounted(async () => {
 }
 
 .opinion-text {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
   font-size: 12px;
   color: var(--th-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty {

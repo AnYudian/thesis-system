@@ -190,11 +190,25 @@ async def list_reviews(
 
 
 async def pending(
-    db: AsyncSession, *, teacher_id: int | None
+    db: AsyncSession,
+    *,
+    teacher_id: int | None,
+    filter_teacher_id: int | None = None,
+    stage: str | None = None,
+    keyword: str | None = None,
 ) -> list[PendingItem]:
     stmt = select(Student).where(Student.status == StudentStatus.ACTIVE.value)
     if teacher_id is not None:
         stmt = stmt.where(Student.teacher_id == teacher_id)
+    if filter_teacher_id is not None:
+        stmt = stmt.where(Student.teacher_id == filter_teacher_id)
+    # 管理员在「阶段流转」一页里直接筛人：按环节、按导师、按姓名学号。
+    # 学生规模不大，筛选放在这里而不是前端，翻页/排序口径以后改起来只动一处。
+    if stage:
+        stmt = stmt.where(Student.current_stage == stage)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(Student.name.ilike(like), Student.sno.ilike(like)))
     students = list((await db.scalars(stmt)).all())
     if not students:
         return []

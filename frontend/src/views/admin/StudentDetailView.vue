@@ -41,6 +41,15 @@ const midtermProgress = computed(() => {
   }
 })
 
+// 管理员看的是"过程有没有真的发生"：面谈几次、线上几次、留了几张证据，
+// 这些比一句"已完成指导"更能说明问题，所以放在明细表上方先给个汇总。
+const guidanceStats = computed(() => {
+  const meet = guidance.value.filter((g) => g.method === 'MEET').length
+  const online = guidance.value.filter((g) => g.method === 'ONLINE').length
+  const evidence = guidance.value.filter((g) => g.evidence_name).length
+  return { total: guidance.value.length, meet, online, evidence }
+})
+
 function toLabel(row: StageReview) {
   if (row.action === 'RETURN') return '留在本环节'
   return stageIndex(row.to_stage) === STAGES.length ? '归档' : stageLabel(row.to_stage)
@@ -158,7 +167,8 @@ onMounted(async () => {
           <h3>指导记录</h3>
           <p>
             中期检查要求教师指导满
-            <b>{{ summary?.midterm_required ?? 10 }}</b> 次，这里是可追溯的明细
+            <b>{{ summary?.midterm_required ?? 10 }}</b> 次；共 {{ guidanceStats.total }} 条明细，
+            面谈 {{ guidanceStats.meet }} 次、线上 {{ guidanceStats.online }} 次、附证据 {{ guidanceStats.evidence }} 条
           </p>
         </header>
 
@@ -208,7 +218,7 @@ onMounted(async () => {
             <template #default="{ row }">{{ row.teacher_name || '—' }}</template>
           </el-table-column>
           <template #empty>
-            <p class="empty">还没有指导记录。学生进入中期检查后，教师需在这里登记满 10 次。</p>
+            <p class="empty">还没有指导记录。教师在「指导记录」登记后，这里会列出每次沟通的时间、方式、内容与证据。</p>
           </template>
         </el-table>
       </section>
@@ -529,9 +539,12 @@ onMounted(async () => {
 }
 
 .empty {
-  margin: 0;
+  max-width: 560px;
+  margin: 0 auto;
   padding: 12px 0;
   font-size: 13px;
+  line-height: 1.8;
+  text-align: center;
   color: var(--th-text-muted);
 }
 

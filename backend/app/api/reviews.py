@@ -21,18 +21,31 @@ from app.services import student_service as student_svc
 router = APIRouter(prefix="/reviews", tags=["阶段审核"])
 
 
-@router.get("/pending", response_model=ApiResponse[list[PendingItem]], summary="待审核列表")
-async def list_pending(db: DBDep, actor: CurrentUser) -> ApiResponse[list[PendingItem]]:
-    # 待办只对教师有意义：他们才是要动手批的人。
-    # 管理员看统计和流转记录就够，学生看自己的档案就够了。
+@router.get("/pending", response_model=ApiResponse[list[PendingItem]], summary="在途学生进度")
+async def list_pending(
+    db: DBDep,
+    actor: CurrentUser,
+    stage: Annotated[Stage | None, Query()] = None,
+    keyword: Annotated[str | None, Query(max_length=50)] = None,
+    teacher_id: Annotated[int | None, Query()] = None,
+) -> ApiResponse[list[PendingItem]]:
+    # 这张表同时是教师的"待批"和管理员的"全校在途学生"：
+    # 教师的数据范围永远是本人名下，管理员可以再按导师筛，二者互不影响。
     if actor.role == Role.TEACHER.value:
-        teacher_id: int | None = actor.id
+        scope_teacher_id: int | None = actor.id
+        teacher_id = None  # 教师传了别人的 id 也不会越权，范围在下面夹死
     elif actor.role == Role.ADMIN.value:
-        teacher_id = None
+        scope_teacher_id = None
     else:
         raise AppError(40300, "阶段审核由指导教师完成", http_status=403)
 
-    items = await svc.pending(db, teacher_id=teacher_id)
+    items = await svc.pending(
+        db,
+        teacher_id=scope_teacher_id,
+        filter_teacher_id=teacher_id,
+        stage=stage.value if stage else None,
+        keyword=keyword,
+    )
     return ok(items)
 
 
