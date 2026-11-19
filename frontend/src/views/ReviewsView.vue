@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 const isAdmin = computed(() => auth.role === 'ADMIN')
 
@@ -34,7 +35,8 @@ function canApprove(row: PendingItem) {
 }
 
 function openDetail(studentId: number) {
-  router.push(`/admin/students/${studentId}`)
+  // from=reviews 让详情页的侧栏仍停在「阶段流转」，返回也回到这张表
+  router.push({ path: `/admin/students/${studentId}`, query: { from: 'reviews' } })
 }
 
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
@@ -105,12 +107,28 @@ async function submit() {
   }
 }
 
+// 教师工作台的环节卡片会带 ?stage= 过来，落地时直接筛好这一环；
+// 页面已打开时再点卡片也要跟着变，所以用 watch 而不是只在 onMounted 读一次
+function applyStageFromQuery() {
+  const stage = route.query.stage
+  query.stage = typeof stage === 'string' ? stage : ''
+}
+
 onMounted(async () => {
+  applyStageFromQuery()
   await load()
   if (isAdmin.value) {
     teachers.value = await teachersApi.list().catch(() => [])
   }
 })
+
+watch(
+  () => route.query.stage,
+  () => {
+    applyStageFromQuery()
+    load()
+  },
+)
 </script>
 
 <template>

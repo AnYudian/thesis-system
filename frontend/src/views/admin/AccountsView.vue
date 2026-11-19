@@ -203,7 +203,7 @@ async function submitAccount() {
       dialogVisible.value = false
       await ElMessageBox.alert(
         `账号 ${res.user.username}\n初始密码 ${res.initial_password}\n\n请转告本人，登录后即可使用。`,
-        form.role === 'TEACHER' ? '教师账号已创建' : '管理员账号已创建',
+        '教师账号已创建',
         { confirmButtonText: '知道了', type: 'success' },
       )
     } else if (editingId.value) {
@@ -280,7 +280,7 @@ onMounted(load)
         <p class="eyebrow">ACCOUNTS</p>
         <h2>账号管理</h2>
         <p class="sub">
-          教师与管理员账号在这里创建；学生账号随「学生与课题」建档自动开通。停用只禁止登录，历史记录全部保留。
+          教师账号在这里创建；学生账号随「学生与课题」建档自动开通，管理员只保留内置的这一个。停用只禁止登录，历史记录全部保留。
         </p>
       </div>
       <el-button type="primary" :icon="Plus" @click="openCreate">新建账号</el-button>
@@ -427,11 +427,12 @@ onMounted(load)
         <el-form-item label="姓名" prop="real_name">
           <el-input v-model="form.real_name" placeholder="真实姓名" />
         </el-form-item>
+        <!-- 系统只保留一个管理员账号：新建固定为教师，编辑时角色只读 -->
         <el-form-item label="角色">
-          <el-radio-group v-model="form.role" :disabled="mode === 'edit'">
-            <el-radio value="TEACHER">教师</el-radio>
-            <el-radio value="ADMIN">管理员</el-radio>
-          </el-radio-group>
+          <span v-if="mode === 'create'" class="role-fixed">教师</span>
+          <el-tag v-else :type="roleTag(form.role)" effect="plain" size="small">
+            {{ roleLabel(form.role) }}
+          </el-tag>
         </el-form-item>
         <template v-if="form.role === 'TEACHER'">
           <el-form-item label="学院" prop="college">
@@ -609,6 +610,11 @@ onMounted(load)
 
 .pwd-who b {
   color: var(--th-primary);
+}
+
+.role-fixed {
+  font-size: 13px;
+  color: var(--th-primary-deep);
 }
 
 .dialog-note {

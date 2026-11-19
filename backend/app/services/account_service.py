@@ -20,7 +20,7 @@ from app.models.user import User
 from app.schemas.user import AccountCreate, AccountOut, AccountUpdate
 
 DEFAULT_PASSWORD = "123456"
-CREATABLE_ROLES = {Role.TEACHER, Role.ADMIN}
+CREATABLE_ROLES = {Role.TEACHER}
 
 # 教师档案四项：教师要靠这些信息联系学生，管理员也用它在详情页核实指导记录
 TEACHER_PROFILE_FIELDS = (
@@ -138,7 +138,7 @@ async def get_account_or_404(db: AsyncSession, user_id: int) -> User:
 
 async def create_account(db: AsyncSession, data: AccountCreate) -> tuple[User, str]:
     if data.role not in CREATABLE_ROLES:
-        raise AppError(42230, "这里只能新建教师或管理员账号", http_status=422)
+        raise AppError(42230, "系统只保留一个管理员账号，这里只能新建教师账号", http_status=422)
     if await db.scalar(select(User.id).where(User.username == data.username)):
         raise AppError(40902, f"账号 {data.username} 已存在", http_status=409)
 

@@ -14,6 +14,12 @@ const route = useRoute()
 const router = useRouter()
 const studentId = Number(route.params.id)
 
+// 同一个详情页从两个入口进来：侧栏高亮和返回文案都跟着来源走
+const fromReviews = computed(() => route.query.from === 'reviews')
+function goBack() {
+  router.push(fromReviews.value ? '/admin/reviews' : '/admin/students')
+}
+
 const loading = ref(true)
 const detail = ref<StudentDetail | null>(null)
 const reviews = ref<StageReview[]>([])
@@ -109,7 +115,9 @@ onMounted(async () => {
 <template>
   <div v-loading="loading" class="page">
     <div class="crumb">
-      <el-button link :icon="ArrowLeft" @click="router.back()">返回阶段流转</el-button>
+      <el-button link :icon="ArrowLeft" @click="goBack">
+        {{ fromReviews ? '返回阶段流转' : '返回学生与课题' }}
+      </el-button>
       <span class="crumb-sep">/</span>
       <span>学生详情</span>
     </div>

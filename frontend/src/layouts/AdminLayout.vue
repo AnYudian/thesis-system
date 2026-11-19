@@ -36,10 +36,19 @@ const menu: MenuItem[] = [
 
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? '管理控制台')
 
+// 学生详情是「阶段流转」和「学生与课题」共用的页，靠 query.from 决定侧栏停在哪儿，
+// 否则从阶段流转点进来，侧栏却跳到"学生与课题"，找不到回去的路。
+const activePath = computed(() => {
+  if (route.name === 'admin-student-detail') {
+    return route.query.from === 'reviews' ? '/admin/reviews' : '/admin/students'
+  }
+  return route.path
+})
+
 // 概览是 /admin 本身，用前缀匹配会一直高亮，单独精确判断
 function isActive(to?: string) {
   if (!to) return false
-  return to === '/admin' ? route.path === '/admin' : route.path.startsWith(to)
+  return to === '/admin' ? activePath.value === '/admin' : activePath.value.startsWith(to)
 }
 
 function logout() {

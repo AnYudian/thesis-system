@@ -52,7 +52,7 @@ function stageIndex(code: string) {
 
 // 管理员从名单点进详情页核实指导记录与审核历史；教师端不开放这个入口
 function openDetail(row: Student) {
-  router.push(`/admin/students/${row.id}`)
+  router.push({ path: `/admin/students/${row.id}`, query: { from: 'students' } })
 }
 
 async function load() {
