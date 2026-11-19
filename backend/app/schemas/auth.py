@@ -15,6 +15,11 @@ class UserOut(BaseModel):
     username: str
     real_name: str | None = None
     role: Role
+    # 教师档案随账号返回：前端指派导师、详情页展示联系方式都直接用它
+    college: str | None = None
+    major: str | None = None
+    phone: str | None = None
+    qq: str | None = None
 
 
 class LoginData(BaseModel):

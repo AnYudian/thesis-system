@@ -25,6 +25,7 @@ from app.schemas.student import (
     StudentDetail,
     StudentOut,
     StudentUpdate,
+    TeacherBrief,
     TopicIn,
     TopicOut,
 )
@@ -139,8 +140,21 @@ async def get_student_by_user(db: AsyncSession, user_id: int) -> Student | None:
 
 async def get_detail(db: AsyncSession, student: Student) -> StudentDetail:
     teacher_name = None
+    teacher_brief = None
     if student.teacher_id:
-        teacher_name = await db.scalar(select(User.real_name).where(User.id == student.teacher_id))
+        teacher = await db.get(User, student.teacher_id)
+        if teacher is not None:
+            teacher_name = teacher.real_name
+            # 详情页要显示导师的学院/专业/电话/QQ，一次取回整行，不再逐字段查
+            teacher_brief = TeacherBrief(
+                id=teacher.id,
+                username=teacher.username,
+                real_name=teacher.real_name,
+                college=teacher.college,
+                major=teacher.major,
+                phone=teacher.phone,
+                qq=teacher.qq,
+            )
     username = None
     if student.user_id:
         username = await db.scalar(select(User.username).where(User.id == student.user_id))
@@ -150,6 +164,7 @@ async def get_detail(db: AsyncSession, student: Student) -> StudentDetail:
     return StudentDetail(
         **base.model_dump(),
         topic=TopicOut.model_validate(topic) if topic else None,
+        teacher=teacher_brief,
     )
 
 

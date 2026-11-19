@@ -24,6 +24,10 @@ class AccountOut(BaseModel):
     is_active: bool
     created_at: datetime
     last_login_at: datetime | None = None
+    college: str | None = None
+    major: str | None = None
+    phone: str | None = None
+    qq: str | None = None
 
 
 class AccountPage(BaseModel):
@@ -39,11 +43,21 @@ class AccountCreate(BaseModel):
     role: Role = Role.TEACHER
     # 不填就用统一初始密码 123456，和 P2 学生账号的口径保持一致
     password: str | None = Field(default=None, min_length=6, max_length=72)
+    # 教师档案：这几项由业务层强制要求（教师账号必填），字段本身给默认值，
+    # 是为了管理员账号可以完全不填
+    college: str | None = Field(default=None, max_length=100)
+    major: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=30)
+    qq: str | None = Field(default=None, max_length=30)
 
 
 class AccountUpdate(BaseModel):
     real_name: str | None = Field(default=None, min_length=1, max_length=50)
     is_active: bool | None = None
+    college: str | None = Field(default=None, max_length=100)
+    major: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=30)
+    qq: str | None = Field(default=None, max_length=30)
 
 
 class AccountCreated(BaseModel):

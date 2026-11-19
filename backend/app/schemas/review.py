@@ -49,6 +49,9 @@ class PendingItem(BaseModel):
     last_action: ReviewAction | None = None
     last_comment: str | None = None
     last_reviewed_at: datetime | None = None
+    # 当前环节的指导记录数；中期检查要求满 10 次才允许通过
+    guidance_count: int = 0
+    guidance_required: int = 0
 
 
 class ReviewResult(BaseModel):

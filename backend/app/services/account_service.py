@@ -7,6 +7,8 @@
 - 不允许停用自己，也不允许停用最后一个管理员，避免把系统锁死。
 """
 
+import re
+
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +22,37 @@ from app.schemas.user import AccountCreate, AccountOut, AccountUpdate
 DEFAULT_PASSWORD = "123456"
 CREATABLE_ROLES = {Role.TEACHER, Role.ADMIN}
 
+# 教师档案四项：教师要靠这些信息联系学生，管理员也用它在详情页核实指导记录
+TEACHER_PROFILE_FIELDS = (
+    ("college", "学院"),
+    ("major", "专业"),
+    ("phone", "手机号"),
+    ("qq", "QQ"),
+)
+
+
+def _clean(value: str | None) -> str | None:
+    text = (value or "").strip()
+    return text or None
+
+
+def _ensure_contact_format(phone: str | None, qq: str | None) -> None:
+    if phone and not re.fullmatch(r"1[3-9]\d{9}", phone):
+        raise AppError(42236, "手机号格式不正确，请填 11 位手机号", http_status=422)
+    if qq and not re.fullmatch(r"[1-9]\d{4,11}", qq):
+        raise AppError(42237, "QQ 号格式不正确，请填 5-12 位数字", http_status=422)
+
+
+def _ensure_teacher_profile(user: User) -> None:
+    """教师账号必须有完整档案：缺哪项说哪项，别让管理员猜。"""
+    missing = [label for attr, label in TEACHER_PROFILE_FIELDS if not getattr(user, attr)]
+    if missing:
+        raise AppError(
+            42235,
+            f"教师账号需要填写{'、'.join(missing)}",
+            http_status=422,
+        )
+
 
 def to_out(user: User, last_login_at=None) -> AccountOut:
     return AccountOut(
@@ -30,6 +63,10 @@ def to_out(user: User, last_login_at=None) -> AccountOut:
         is_active=user.is_active,
         created_at=user.created_at,
         last_login_at=last_login_at,
+        college=user.college,
+        major=user.major,
+        phone=user.phone,
+        qq=user.qq,
     )
 
 
@@ -112,6 +149,15 @@ async def create_account(db: AsyncSession, data: AccountCreate) -> tuple[User, s
         role=data.role.value,
         password_hash=hash_password(password),
     )
+    if data.role is Role.TEACHER:
+        # 手机号/QQ 先做格式校验再落库，避免以后按号码加人时混进无法使用的数据
+        _ensure_contact_format(_clean(data.phone), _clean(data.qq))
+        user.college = _clean(data.college)
+        user.major = _clean(data.major)
+        user.phone = _clean(data.phone)
+        user.qq = _clean(data.qq)
+        _ensure_teacher_profile(user)
+
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -140,6 +186,20 @@ async def update_account(
 
     if data.real_name is not None:
         account.real_name = data.real_name
+
+    # 四项档案都用"传了才改"的语义；管理员改教师资料时前端会把四项一起提交
+    if data.college is not None:
+        account.college = _clean(data.college)
+    if data.major is not None:
+        account.major = _clean(data.major)
+    if data.phone is not None:
+        account.phone = _clean(data.phone)
+    if data.qq is not None:
+        account.qq = _clean(data.qq)
+
+    if account.role == Role.TEACHER.value:
+        _ensure_contact_format(account.phone, account.qq)
+        _ensure_teacher_profile(account)
 
     await db.commit()
     await db.refresh(account)

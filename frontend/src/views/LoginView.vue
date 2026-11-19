@@ -77,7 +77,7 @@ async function submit() {
       </div>
     </div>
 
-    <footer class="foot">毕业论文（设计）全过程进度跟踪与智能审阅系统 · V0.1</footer>
+    <footer class="foot">毕业论文（设计）全过程进度跟踪与智能审阅系统 · V0.6</footer>
   </div>
 </template>
 

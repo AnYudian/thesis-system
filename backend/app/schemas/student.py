@@ -71,8 +71,21 @@ class StudentOut(BaseModel):
     created_at: datetime
 
 
+class TeacherBrief(BaseModel):
+    """详情页展示导师联系方式：管理员需要知道找谁核实指导记录。"""
+
+    id: int
+    username: str
+    real_name: str | None = None
+    college: str | None = None
+    major: str | None = None
+    phone: str | None = None
+    qq: str | None = None
+
+
 class StudentDetail(StudentOut):
     topic: TopicOut | None = None
+    teacher: TeacherBrief | None = None
 
 
 class StudentPage(BaseModel):

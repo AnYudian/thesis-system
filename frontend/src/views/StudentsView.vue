@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ElMessage,
   ElMessageBox,
@@ -21,6 +22,7 @@ import { STAGES } from '@/constants/stages'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const router = useRouter()
 const isAdmin = computed(() => auth.role === 'ADMIN')
 
 const loading = ref(false)
@@ -46,6 +48,11 @@ function stageLabel(code: string) {
 
 function stageIndex(code: string) {
   return STAGES.findIndex((s) => s.code === code) + 1
+}
+
+// 管理员从名单点进详情页核实指导记录与审核历史；教师端不开放这个入口
+function openDetail(row: Student) {
+  router.push(`/admin/students/${row.id}`)
 }
 
 async function load() {
@@ -452,7 +459,14 @@ onMounted(async () => {
             <span v-else class="cell-sub muted">未开通账号</span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="姓名" width="80" />
+        <el-table-column label="姓名" width="86">
+          <template #default="{ row }">
+            <el-button v-if="isAdmin" link type="primary" class="name-link" @click="openDetail(row)">
+              {{ row.name }}
+            </el-button>
+            <span v-else>{{ row.name }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="专业 / 班级" min-width="176">
           <template #default="{ row }">
             <span class="cell-main">{{ row.major }}</span>
@@ -861,6 +875,11 @@ onMounted(async () => {
 
 .cell-main {
   display: block;
+  font-size: 13px;
+}
+
+.name-link {
+  padding: 0;
   font-size: 13px;
 }
 

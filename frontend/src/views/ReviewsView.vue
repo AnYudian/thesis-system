@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
@@ -15,10 +16,21 @@ import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 
 const auth = useAuthStore()
+const router = useRouter()
 const isAdmin = computed(() => auth.role === 'ADMIN')
 
 const loading = ref(false)
 const items = ref<PendingItem[]>([])
+
+// 中期检查先看指导次数：不够 10 次时把「通过」按钮直接禁掉，
+// 后端也会再拦一次，这里只是让老师少点一次、提前知道差在哪
+function canApprove(row: PendingItem) {
+  return !row.guidance_required || row.guidance_count >= row.guidance_required
+}
+
+function openDetail(studentId: number) {
+  router.push(`/admin/students/${studentId}`)
+}
 
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
 const stageIndex = (code: string) => STAGES.findIndex((s) => s.code === code) + 1
@@ -191,6 +203,19 @@ onMounted(async () => {
             <span v-else class="cell-sub">暂无材料</span>
           </template>
         </el-table-column>
+        <el-table-column label="指导记录" width="118">
+          <template #default="{ row }">
+            <template v-if="row.guidance_required">
+              <span class="cell-main" :class="{ 'is-short': row.guidance_count < row.guidance_required }">
+                {{ row.guidance_count }} / {{ row.guidance_required }} 次
+              </span>
+              <span class="cell-sub">
+                {{ row.guidance_count >= row.guidance_required ? '已达标' : '不足，无法通过' }}
+              </span>
+            </template>
+            <span v-else class="cell-sub">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="上次意见" min-width="180">
           <template #default="{ row }">
             <template v-if="row.last_action">
@@ -206,8 +231,23 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column v-if="!isAdmin" label="操作" width="128" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="open(row, 'APPROVE')">通过</el-button>
+            <el-tooltip
+              :disabled="canApprove(row)"
+              content="中期检查要求指导记录满 10 次，请先在「指导记录」补齐"
+              placement="top"
+            >
+              <span>
+                <el-button link type="primary" :disabled="!canApprove(row)" @click="open(row, 'APPROVE')">
+                  通过
+                </el-button>
+              </span>
+            </el-tooltip>
             <el-button link type="danger" @click="open(row, 'RETURN')">退回</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isAdmin" label="操作" width="82" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openDetail(row.student_id)">详情</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -301,6 +341,11 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="审核人" width="92">
               <template #default="{ row }">{{ row.reviewer_name || '—' }}</template>
+            </el-table-column>
+            <el-table-column v-if="isAdmin" label="操作" width="76">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openDetail(row.student_id)">详情</el-button>
+              </template>
             </el-table-column>
             <template #empty>
               <p class="empty">还没有审核记录。学生材料通过或退回后，这里会留下完整流水。</p>
@@ -481,6 +526,10 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cell-main.is-short {
+  color: #a33a2a;
 }
 
 .stage-pill {

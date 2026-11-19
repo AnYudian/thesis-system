@@ -67,8 +67,10 @@ function reset() {
   search()
 }
 
-// ---- 新建账号 ----
+// ---- 新建 / 编辑账号 ----
 const dialogVisible = ref(false)
+const mode = ref<'create' | 'edit'>('create')
+const editingId = ref<number | null>(null)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive({
@@ -76,6 +78,22 @@ const form = reactive({
   real_name: '',
   role: 'TEACHER' as 'TEACHER' | 'ADMIN',
   password: '',
+  college: '',
+  major: '',
+  phone: '',
+  qq: '',
+})
+
+// 教师档案在界面上是必填；管理员账号没有这些字段，所以校验要看当前角色
+const teacherRequired = (label: string) => ({
+  validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+    if (form.role === 'TEACHER' && !(value || '').trim()) {
+      callback(new Error(`请输入${label}`))
+      return
+    }
+    callback()
+  },
+  trigger: 'blur' as const,
 })
 
 const rules: FormRules = {
@@ -89,32 +107,113 @@ const rules: FormRules = {
   ],
   real_name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   password: [{ min: 6, max: 72, message: '密码 6-72 位', trigger: 'blur' }],
+  college: [teacherRequired('学院')],
+  major: [teacherRequired('专业')],
+  phone: [
+    teacherRequired('手机号'),
+    {
+      validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+        const text = (value || '').trim()
+        if (form.role === 'TEACHER' && text && !/^1[3-9]\d{9}$/.test(text)) {
+          callback(new Error('请填写 11 位手机号'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur' as const,
+    },
+  ],
+  qq: [
+    teacherRequired('QQ 号'),
+    {
+      validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+        const text = (value || '').trim()
+        if (form.role === 'TEACHER' && text && !/^[1-9]\d{4,11}$/.test(text)) {
+          callback(new Error('QQ 号为 5-12 位数字'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur' as const,
+    },
+  ],
+}
+
+function resetForm() {
+  Object.assign(form, {
+    username: '',
+    real_name: '',
+    role: 'TEACHER',
+    password: '',
+    college: '',
+    major: '',
+    phone: '',
+    qq: '',
+  })
 }
 
 function openCreate() {
-  Object.assign(form, { username: '', real_name: '', role: 'TEACHER', password: '' })
+  mode.value = 'create'
+  editingId.value = null
+  resetForm()
   dialogVisible.value = true
 }
 
-async function submitCreate() {
+function openEdit(row: Account) {
+  mode.value = 'edit'
+  editingId.value = row.id
+  Object.assign(form, {
+    username: row.username,
+    real_name: row.real_name ?? '',
+    role: row.role === 'ADMIN' ? 'ADMIN' : 'TEACHER',
+    password: '',
+    college: row.college ?? '',
+    major: row.major ?? '',
+    phone: row.phone ?? '',
+    qq: row.qq ?? '',
+  })
+  dialogVisible.value = true
+}
+
+async function submitAccount() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
   saving.value = true
   try {
-    const res = await accountsApi.create({
-      username: form.username.trim(),
-      real_name: form.real_name.trim(),
-      role: form.role,
-      password: form.password || null,
-    })
-    dialogVisible.value = false
-    await ElMessageBox.alert(
-      `账号 ${res.user.username}\n初始密码 ${res.initial_password}\n\n请转告本人，登录后即可使用。`,
-      form.role === 'TEACHER' ? '教师账号已创建' : '管理员账号已创建',
-      { confirmButtonText: '知道了', type: 'success' },
-    )
+    const profile =
+      form.role === 'TEACHER'
+        ? {
+            college: form.college.trim(),
+            major: form.major.trim(),
+            phone: form.phone.trim(),
+            qq: form.qq.trim(),
+          }
+        : { college: null, major: null, phone: null, qq: null }
+
+    if (mode.value === 'create') {
+      const res = await accountsApi.create({
+        username: form.username.trim(),
+        real_name: form.real_name.trim(),
+        role: form.role,
+        password: form.password || null,
+        ...profile,
+      })
+      dialogVisible.value = false
+      await ElMessageBox.alert(
+        `账号 ${res.user.username}\n初始密码 ${res.initial_password}\n\n请转告本人，登录后即可使用。`,
+        form.role === 'TEACHER' ? '教师账号已创建' : '管理员账号已创建',
+        { confirmButtonText: '知道了', type: 'success' },
+      )
+    } else if (editingId.value) {
+      await accountsApi.update(editingId.value, {
+        real_name: form.real_name.trim(),
+        ...profile,
+      })
+      dialogVisible.value = false
+      ElMessage.success('账号信息已保存')
+    }
     await load()
   } finally {
     saving.value = false
@@ -171,20 +270,6 @@ async function toggleActive(row: Account) {
   await load()
 }
 
-async function resetPassword(row: Account) {
-  await ElMessageBox.confirm(
-    `将 ${row.real_name || row.username}（${row.username}）的密码重置为统一初始密码 123456。`,
-    '重置密码',
-    { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' },
-  )
-  const res = await accountsApi.resetPassword(row.id)
-  await ElMessageBox.alert(
-    `账号 ${row.username}\n新密码 ${res.password}`,
-    '密码已重置',
-    { confirmButtonText: '知道了', type: 'success' },
-  )
-}
-
 onMounted(load)
 </script>
 
@@ -227,43 +312,54 @@ onMounted(load)
 
     <section class="table-wrap">
       <el-table v-loading="loading" :data="items" stripe row-key="id">
-        <el-table-column label="账号" min-width="150">
+        <el-table-column label="账号" min-width="140">
           <template #default="{ row }">
             <span class="cell-main">{{ row.username }}</span>
             <span class="cell-sub">{{ row.role === 'STUDENT' ? '学号即账号' : '后台登录账号' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="姓名" width="110">
+        <el-table-column label="姓名 / 院系" width="160">
           <template #default="{ row }">
-            <span>{{ row.real_name || '—' }}</span>
-            <span v-if="row.id === auth.user?.id" class="self">当前账号</span>
+            <span>
+              {{ row.real_name || '—' }}
+              <span v-if="row.id === auth.user?.id" class="self">当前账号</span>
+            </span>
+            <span v-if="row.role === 'TEACHER'" class="cell-sub">
+              {{ row.college || '未填学院' }} · {{ row.major || '未填专业' }}
+            </span>
           </template>
         </el-table-column>
-        <el-table-column label="角色" width="90">
+        <el-table-column label="角色" width="84">
           <template #default="{ row }">
             <el-tag :type="roleTag(row.role)" effect="plain" size="small">
               {{ roleLabel(row.role) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="82">
+        <el-table-column label="联系方式" width="148">
+          <template #default="{ row }">
+            <template v-if="row.role === 'TEACHER'">
+              <span class="cell-main">{{ row.phone || '未填手机' }}</span>
+              <span class="cell-sub">QQ {{ row.qq || '—' }}</span>
+            </template>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="76">
           <template #default="{ row }">
             <span class="status" :class="row.is_active ? 'is-on' : 'is-off'">
               {{ row.is_active ? '启用' : '停用' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="最近登录" width="142">
+        <el-table-column label="最近登录" width="136">
           <template #default="{ row }">
             <span class="time">{{ row.last_login_at ? formatTime(row.last_login_at) : '从未登录' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="142">
-          <template #default="{ row }"><span class="time">{{ formatTime(row.created_at) }}</span></template>
-        </el-table-column>
-        <el-table-column label="操作" width="204" fixed="right">
+        <el-table-column label="操作" width="176" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="resetPassword(row)">重置密码</el-button>
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="primary" @click="openSetPassword(row)">改密</el-button>
             <el-button
               v-if="row.id !== auth.user?.id"
@@ -314,28 +410,55 @@ onMounted(load)
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dialogVisible" title="新建账号" width="480px" destroy-on-close>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="mode === 'create' ? '新建账号' : '编辑账号'"
+      width="500px"
+      destroy-on-close
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="86px">
         <el-form-item label="登录账号" prop="username">
-          <el-input v-model="form.username" placeholder="如 teacher_li" />
+          <el-input
+            v-model="form.username"
+            :disabled="mode === 'edit'"
+            placeholder="如 teacher_li"
+          />
         </el-form-item>
         <el-form-item label="姓名" prop="real_name">
           <el-input v-model="form.real_name" placeholder="真实姓名" />
         </el-form-item>
         <el-form-item label="角色">
-          <el-radio-group v-model="form.role">
+          <el-radio-group v-model="form.role" :disabled="mode === 'edit'">
             <el-radio value="TEACHER">教师</el-radio>
             <el-radio value="ADMIN">管理员</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="初始密码" prop="password">
+        <template v-if="form.role === 'TEACHER'">
+          <el-form-item label="学院" prop="college">
+            <el-input v-model="form.college" placeholder="如 计算机学院" />
+          </el-form-item>
+          <el-form-item label="专业" prop="major">
+            <el-input v-model="form.major" placeholder="如 软件工程" />
+          </el-form-item>
+          <el-form-item label="手机号" prop="phone">
+            <el-input v-model="form.phone" maxlength="11" placeholder="11 位手机号，学生需要时能联系到你" />
+          </el-form-item>
+          <el-form-item label="QQ 号" prop="qq">
+            <el-input v-model="form.qq" maxlength="12" placeholder="5-12 位数字" />
+          </el-form-item>
+        </template>
+        <el-form-item v-if="mode === 'create'" label="初始密码" prop="password">
           <el-input v-model="form.password" placeholder="留空则使用统一初始密码 123456" show-password />
         </el-form-item>
       </el-form>
-      <p class="dialog-note">学生账号不在这里创建：在「学生与课题」建档时勾选开通，账号即学号。</p>
+      <p class="dialog-note">
+        教师档案（学院 / 专业 / 手机号 / QQ）为必填：指导记录和中期检查都需要能联系到指导教师。
+      </p>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
+        <el-button type="primary" :loading="saving" @click="submitAccount">
+          {{ mode === 'create' ? '创建' : '保存' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -464,6 +587,11 @@ onMounted(load)
   font-size: 12px;
   color: var(--th-text-muted);
   white-space: nowrap;
+}
+
+.muted {
+  color: #9b958a;
+  font-size: 12.5px;
 }
 
 .empty {

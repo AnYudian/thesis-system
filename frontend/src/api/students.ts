@@ -24,8 +24,19 @@ export interface Topic {
   updated_at: string
 }
 
+export interface TeacherBrief {
+  id: number
+  username: string
+  real_name: string | null
+  college: string | null
+  major: string | null
+  phone: string | null
+  qq: string | null
+}
+
 export interface StudentDetail extends Student {
   topic: Topic | null
+  teacher: TeacherBrief | null
 }
 
 export interface StudentPage {
@@ -106,5 +117,5 @@ export const studentsApi = {
 }
 
 export const teachersApi = {
-  list: () => get<{ id: number; username: string; real_name: string | null }[]>('/users/teachers'),
+  list: () => get<TeacherBrief[]>('/users/teachers'),
 }

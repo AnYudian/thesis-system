@@ -47,6 +47,19 @@ class ReviewAction(str, Enum):
     APPROVE = "APPROVE"
     RETURN = "RETURN"
 
+
+class GuidanceMethod(str, Enum):
+    """教师与学生的沟通方式。中期检查要求留痕，至少要能区分线下见面和线上沟通。"""
+
+    MEET = "MEET"
+    ONLINE = "ONLINE"
+
+
+GUIDANCE_METHOD_LABELS: dict[GuidanceMethod, str] = {
+    GuidanceMethod.MEET: "面谈",
+    GuidanceMethod.ONLINE: "线上",
+}
+
 STAGE_LABELS: dict[Stage, str] = {
     Stage.TOPIC: "选题/双向选择",
     Stage.TASK_BOOK: "任务书下达",

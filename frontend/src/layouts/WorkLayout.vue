@@ -22,6 +22,7 @@ const nav = computed(() => {
       { to: '/', title: '工作台', exact: true },
       { to: '/my-students', title: '我的学生' },
       { to: '/materials', title: '学生材料' },
+      { to: '/guidance', title: '指导记录' },
       { to: '/reviews', title: '阶段审核' },
     ]
   }
@@ -81,7 +82,7 @@ function logout() {
 
     <footer class="foot">
       <span>毕业论文（设计）全过程进度跟踪与智能审阅系统</span>
-      <span class="version">V0.2 · 2026</span>
+      <span class="version">V0.6 · 2026</span>
     </footer>
   </div>
 </template>

@@ -14,6 +14,9 @@ export interface PendingItem {
   last_action: ReviewAction | null
   last_comment: string | null
   last_reviewed_at: string | null
+  // 当前环节的指导记录数 / 要求次数（中期为 10，其余为 0）
+  guidance_count: number
+  guidance_required: number
 }
 
 export interface StageReview {

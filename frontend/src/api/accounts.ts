@@ -10,6 +10,10 @@ export interface Account {
   is_active: boolean
   created_at: string
   last_login_at: string | null
+  college: string | null
+  major: string | null
+  phone: string | null
+  qq: string | null
 }
 
 export interface AccountPage {
@@ -32,14 +36,27 @@ export interface AccountForm {
   real_name: string
   role: 'TEACHER' | 'ADMIN'
   password?: string | null
+  college?: string | null
+  major?: string | null
+  phone?: string | null
+  qq?: string | null
 }
 
 export const accountsApi = {
   list: (params: AccountQuery) => get<AccountPage>('/users', params as Record<string, unknown>),
   create: (body: AccountForm) =>
     post<{ user: Account; initial_password: string }>('/users', body),
-  update: (id: number, body: { real_name?: string; is_active?: boolean }) =>
-    patch<Account>(`/users/${id}`, body),
+  update: (
+    id: number,
+    body: {
+      real_name?: string
+      is_active?: boolean
+      college?: string | null
+      major?: string | null
+      phone?: string | null
+      qq?: string | null
+    },
+  ) => patch<Account>(`/users/${id}`, body),
   /** 重置为统一初始密码，返回值由页面弹窗告知管理员 */
   resetPassword: (id: number) => post<{ password: string }>(`/users/${id}/reset-password`),
   /** 管理员直接设置指定密码（教师忘了密码，或要发一个临时密码时用） */

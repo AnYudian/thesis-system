@@ -22,3 +22,10 @@ class User(Base, TimestampMixin):
     real_name: Mapped[str | None] = mapped_column(String(50))
     role: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+
+    # 教师档案：学院、专业、手机号、QQ。教师要用它联系学生，所以由业务层要求必填；
+    # 数据库层面仍允许为空——历史账号和管理员账号都不需要这几项，加 NOT NULL 会挡住迁移。
+    college: Mapped[str | None] = mapped_column(String(100))
+    major: Mapped[str | None] = mapped_column(String(100))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    qq: Mapped[str | None] = mapped_column(String(30))

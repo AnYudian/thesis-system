@@ -14,11 +14,13 @@ from sqlalchemy.orm import aliased
 from app.core.exceptions import AppError
 from app.models.audit_log import AuditLog
 from app.models.enums import STAGE_NEXT, STAGE_ORDER, ReviewAction, Stage, StudentStatus
+from app.models.guidance import GuidanceRecord
 from app.models.material import Material
 from app.models.stage_review import StageReview
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.review import PendingItem, ReviewOut
+from app.services.guidance_service import MIDTERM_REQUIRED
 
 
 async def decide(
@@ -47,6 +49,25 @@ async def decide(
             Material.student_id == student.id, Material.stage == current.value
         )
     )
+
+    # 中期检查是硬门槛：没指导满 10 次就放行，等于把"过程管理"变成了走过场。
+    # 只拦通过，不拦退回——材料不合格时教师仍应能直接退回。
+    if action is ReviewAction.APPROVE and current is Stage.MIDTERM:
+        guidance_done = await db.scalar(
+            select(func.count())
+            .select_from(GuidanceRecord)
+            .where(
+                GuidanceRecord.student_id == student.id,
+                GuidanceRecord.stage == Stage.MIDTERM.value,
+            )
+        ) or 0
+        if guidance_done < MIDTERM_REQUIRED:
+            raise AppError(
+                42223,
+                f"中期检查要求指导记录满 {MIDTERM_REQUIRED} 次，当前只有 {guidance_done} 次。"
+                "请先在「指导记录」补充，或直接退回让学生完善。",
+                http_status=422,
+            )
 
     if action is ReviewAction.APPROVE:
         next_stage = STAGE_NEXT.get(current)
@@ -199,6 +220,16 @@ async def pending(
         for sid, stage, count, last_at, version in material_rows
     }
 
+    # 中期检查要看指导次数，和材料一样一次查齐，避免逐生查询
+    guidance_rows = (
+        await db.execute(
+            select(GuidanceRecord.student_id, GuidanceRecord.stage, func.count())
+            .where(GuidanceRecord.student_id.in_(ids))
+            .group_by(GuidanceRecord.student_id, GuidanceRecord.stage)
+        )
+    ).all()
+    guidance_counts = {(sid, stage): count for sid, stage, count in guidance_rows}
+
     # 管理员要跨教师看，列表里得知道这个学生归谁带；一次查齐，别在循环里查
     teacher_ids = {s.teacher_id for s in students if s.teacher_id is not None}
     teacher_names: dict[int, str] = {}
@@ -243,6 +274,12 @@ async def pending(
                 last_action=review.action if review else None,  # type: ignore[arg-type]
                 last_comment=review.comment if review else None,
                 last_reviewed_at=review.created_at if review else None,
+                guidance_count=guidance_counts.get(
+                    (student.id, student.current_stage), 0
+                ),
+                guidance_required=(
+                    MIDTERM_REQUIRED if student.current_stage == Stage.MIDTERM.value else 0
+                ),
             )
         )
 

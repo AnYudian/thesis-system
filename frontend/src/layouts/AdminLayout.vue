@@ -76,7 +76,7 @@ function logout() {
       </nav>
 
       <div class="side-foot">
-        <p>V0.2 · 演示数据</p>
+        <p>V0.6 · 演示数据</p>
         <p class="side-tip">管理员视角：查看全局进度与材料</p>
       </div>
     </aside>
