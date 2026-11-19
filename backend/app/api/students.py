@@ -8,7 +8,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from app.api.deps import CurrentUser, DBDep, require_role
 from app.core.exceptions import AppError
@@ -17,6 +17,8 @@ from app.models.enums import Role, Stage, StudentStatus
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.student import (
+    AssignTeacherIn,
+    AssignTeacherOut,
     ImportIn,
     ImportResult,
     StudentCreate,
@@ -101,7 +103,9 @@ async def get_student(db: DBDep, actor: CurrentUser, student_id: int) -> ApiResp
 
 @router.post("/import", response_model=ApiResponse[ImportResult], summary="批量导入学生（仅管理员）")
 async def import_students(db: DBDep, actor: AdminUser, data: ImportIn) -> ApiResponse[ImportResult]:
-    result = await svc.import_students(db, text=data.text, create_account=data.create_account)
+    result = await svc.import_students(
+        db, text=data.text, create_account=data.create_account
+    )
     await log_service.commit_record(
         db,
         user_id=actor.id,
@@ -110,6 +114,61 @@ async def import_students(db: DBDep, actor: AdminUser, data: ImportIn) -> ApiRes
         detail={"created": result.created, "skipped": result.skipped},
     )
     return ok(result, message=f"已导入 {result.created} 人" + (f"，跳过 {result.skipped} 行" if result.skipped else ""))
+
+
+@router.post(
+    "/import/file", response_model=ApiResponse[ImportResult], summary="批量导入学生（Excel）"
+)
+async def import_students_file(
+    db: DBDep,
+    actor: AdminUser,
+    file: Annotated[UploadFile, File(description=".xlsx 文件，第一行可为表头")],
+    create_account: Annotated[bool, Form()] = True,
+) -> ApiResponse[ImportResult]:
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".xlsx"):
+        raise AppError(42236, "只支持 .xlsx 文件，请在 Excel 里另存为 .xlsx 后重试", http_status=422)
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise AppError(42237, "Excel 文件不能超过 5MB", http_status=422)
+
+    result = await svc.import_students(db, data=content, create_account=create_account)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="STUDENT_IMPORT",
+        target_type="STUDENT",
+        detail={"created": result.created, "skipped": result.skipped, "source": "xlsx"},
+    )
+    return ok(
+        result,
+        message=f"已导入 {result.created} 人" + (f"，跳过 {result.skipped} 行" if result.skipped else ""),
+    )
+
+
+@router.post(
+    "/assign-teacher",
+    response_model=ApiResponse[AssignTeacherOut],
+    summary="批量指派导师（仅管理员）",
+)
+async def assign_teacher(
+    db: DBDep, actor: AdminUser, data: AssignTeacherIn
+) -> ApiResponse[AssignTeacherOut]:
+    updated, teacher_name = await svc.assign_teacher(
+        db, student_ids=data.student_ids, teacher_id=data.teacher_id
+    )
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="STUDENT_ASSIGN_TEACHER",
+        target_type="USER",
+        target_id=data.teacher_id,
+        detail={"teacher": teacher_name, "count": updated},
+    )
+    return ok(
+        AssignTeacherOut(updated=updated, teacher_name=teacher_name),
+        message=f"已把 {updated} 名学生指派给 {teacher_name}",
+    )
 
 
 @router.post("", response_model=ApiResponse[StudentCreated], summary="新建学生（仅管理员）")

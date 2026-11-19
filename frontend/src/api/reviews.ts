@@ -21,6 +21,7 @@ export interface StageReview {
   student_id: number
   student_name: string
   sno: string
+  teacher_name: string | null
   stage: string
   action: ReviewAction
   from_stage: string
@@ -48,7 +49,10 @@ export interface ReviewQuery {
   page?: number
   size?: number
   stage?: string
+  keyword?: string
+  action?: ReviewAction
   student_id?: number
+  teacher_id?: number
 }
 
 export const reviewsApi = {

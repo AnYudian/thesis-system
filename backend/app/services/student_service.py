@@ -264,36 +264,75 @@ async def delete_topic(db: AsyncSession, student: Student) -> None:
     if topic is not None:
         await db.delete(topic)
         await db.commit()
-
 _MAX_IMPORT_ROWS = 500
+_MAX_IMPORT_BYTES = 5 * 1024 * 1024
 _SNO_RE = re.compile(SNO_PATTERN)
 _TAB = chr(9)
 
 
-def _split_import_rows(text: str) -> list[tuple[int, list[str]]]:
+def _text_rows(text: str) -> list[list[str]]:
     """按行切分，自动识别制表符（从 Excel 复制）和逗号（CSV）。"""
     lines = text.splitlines()
     delimiter = _TAB if any(_TAB in line for line in lines if line.strip()) else ","
-    return [
-        (index, cells)
-        for index, cells in enumerate(csv.reader(lines, delimiter=delimiter), start=1)
-    ]
+    return [cells for cells in csv.reader(lines, delimiter=delimiter)]
 
 
-async def import_students(db: AsyncSession, *, text: str, create_account: bool) -> ImportResult:
-    """批量建档。
+def _cell_text(value: object) -> str:
+    if value is None:
+        return ""
+    # Excel 里纯数字学号会读成 float（20220001.0），转回整数字符串
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _xlsx_rows(data: bytes) -> list[list[str]]:
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    try:
+        book = load_workbook(BytesIO(data), read_only=True, data_only=True)
+    except Exception as exc:
+        raise AppError(
+            42234, "无法读取 Excel，请确认文件是 .xlsx 格式且没有损坏", http_status=422
+        ) from exc
+    try:
+        sheet = book.active
+        return [[_cell_text(value) for value in row] for row in sheet.iter_rows(values_only=True)]
+    finally:
+        book.close()
+
+
+async def import_students(
+    db: AsyncSession,
+    *,
+    text: str | None = None,
+    data: bytes | None = None,
+    create_account: bool,
+) -> ImportResult:
+    """批量建档，支持粘贴文本和上传 .xlsx。
 
     逐行校验、能建的先建：一个学号填错不应该让整张名单都导不进去。
     但顺序仍然是"全部校验完 → 一次性写入 → 一次 commit"，
     避免中途报错留下半张名单。
+
+    指导教师必填：没有导师的学生在阶段审核里没人能放行，
+    导入时就要把归属定下来，后续可在学生列表里批量改派。
     """
-    parsed = _split_import_rows(text)
-    rows: list[tuple[int, str, str, str, str, str, str | None, str]] = []
+    if data is not None:
+        rows = _xlsx_rows(data)
+    elif text is not None:
+        rows = _text_rows(text)
+    else:
+        raise AppError(42235, "没有可导入的内容", http_status=422)
+
+    parsed: list[tuple[int, str, str, str, str, str, str, str]] = []
     errors: list[ImportErrorItem] = []
     seen: set[str] = set()
     header_checked = False
 
-    for line_no, cells in parsed:
+    for line_no, cells in enumerate(rows, start=1):
         cells = [cell.strip() for cell in cells]
         if not any(cells):
             continue
@@ -304,66 +343,78 @@ async def import_students(db: AsyncSession, *, text: str, create_account: bool) 
             if cells[0].lower() in ("学号", "sno", "student_no") or "学号" in cells[0]:
                 continue  # 表头行，不当作数据
 
-        if len(cells) < 5:
+        if len(cells) < 6:
             errors.append(
-                ImportErrorItem(line=line_no, content=content, reason="至少需要 5 列：学号,姓名,专业,班级,年级")
+                ImportErrorItem(
+                    line=line_no,
+                    content=content,
+                    reason="至少需要 6 列：学号,姓名,专业,班级,年级,指导教师账号",
+                )
             )
             continue
 
-        sno, name, major, class_name, grade = cells[:5]
-        teacher_username = cells[5] if len(cells) > 5 and cells[5] else None
+        sno, name, major, class_name, grade, teacher_username = cells[:6]
 
         if not _SNO_RE.fullmatch(sno) or not 4 <= len(sno) <= 30:
             errors.append(
-                ImportErrorItem(line=line_no, content=content, reason="学号只能是 4-30 位字母、数字、下划线或横线")
+                ImportErrorItem(
+                    line=line_no,
+                    content=content,
+                    reason="学号只能是 4-30 位字母、数字、下划线或横线",
+                )
             )
             continue
         if not name:
             errors.append(ImportErrorItem(line=line_no, content=content, reason="姓名为空"))
             continue
         if not major or not class_name or len(grade) < 2:
-            errors.append(ImportErrorItem(line=line_no, content=content, reason="专业 / 班级 / 年级不能为空"))
+            errors.append(
+                ImportErrorItem(line=line_no, content=content, reason="专业 / 班级 / 年级不能为空")
+            )
+            continue
+        if not teacher_username:
+            errors.append(
+                ImportErrorItem(line=line_no, content=content, reason="指导教师账号必填")
+            )
             continue
         if sno in seen:
             errors.append(ImportErrorItem(line=line_no, content=content, reason="名单里学号重复"))
             continue
         seen.add(sno)
-        rows.append((line_no, sno, name, major, class_name, grade, teacher_username, content))
+        parsed.append((line_no, sno, name, major, class_name, grade, teacher_username, content))
 
-    if len(rows) > _MAX_IMPORT_ROWS:
+    if len(parsed) > _MAX_IMPORT_ROWS:
         raise AppError(42233, f"单次最多导入 {_MAX_IMPORT_ROWS} 人，请分批", http_status=422)
-    if not rows:
+    if not parsed:
         return ImportResult(created=0, skipped=len(errors), errors=errors, initial_password=None)
 
-    snos = [row[1] for row in rows]
+    snos = [row[1] for row in parsed]
     existing_sno = set((await db.scalars(select(Student.sno).where(Student.sno.in_(snos)))).all())
     existing_account = set(
         (await db.scalars(select(User.username).where(User.username.in_(snos)))).all()
     )
 
-    wanted_teachers = {row[6] for row in rows if row[6]}
-    teacher_map: dict[str, int] = {}
-    if wanted_teachers:
-        teacher_map = {
-            username: user_id
-            for user_id, username in (
-                await db.execute(
-                    select(User.id, User.username).where(
-                        User.username.in_(wanted_teachers),
-                        User.role == Role.TEACHER.value,
-                        User.is_active.is_(True),
-                    )
+    wanted_teachers = {row[6] for row in parsed}
+    teacher_map: dict[str, int] = {
+        username: user_id
+        for user_id, username in (
+            await db.execute(
+                select(User.id, User.username).where(
+                    User.username.in_(wanted_teachers),
+                    User.role == Role.TEACHER.value,
+                    User.is_active.is_(True),
                 )
-            ).all()
-        }
+            )
+        ).all()
+    }
 
     created = 0
-    for line_no, sno, name, major, class_name, grade, teacher_username, content in rows:
+    for line_no, sno, name, major, class_name, grade, teacher_username, content in parsed:
         if sno in existing_sno or (create_account and sno in existing_account):
             reason = "学号已存在" if sno in existing_sno else "账号已被占用"
             errors.append(ImportErrorItem(line=line_no, content=content, reason=reason))
             continue
-        if teacher_username and teacher_username not in teacher_map:
+        if teacher_username not in teacher_map:
             errors.append(
                 ImportErrorItem(
                     line=line_no,
@@ -393,7 +444,7 @@ async def import_students(db: AsyncSession, *, text: str, create_account: bool) 
                 major=major,
                 class_name=class_name,
                 grade=grade,
-                teacher_id=teacher_map.get(teacher_username) if teacher_username else None,
+                teacher_id=teacher_map[teacher_username],
                 current_stage=Stage.TOPIC.value,
                 status=StudentStatus.ACTIVE.value,
             )
@@ -407,3 +458,28 @@ async def import_students(db: AsyncSession, *, text: str, create_account: bool) 
         errors=errors,
         initial_password=DEFAULT_PASSWORD if create_account and created else None,
     )
+
+
+async def assign_teacher(
+    db: AsyncSession, *, student_ids: list[int], teacher_id: int
+) -> tuple[int, str]:
+    """批量改派导师。
+
+    用于"新建了教师账号，把一批学生划给他"：一个一个改太慢，
+    而且新建学生已经强制带导师，改派是这个流程的必要补充。
+    """
+    teacher = await db.get(User, teacher_id)
+    if teacher is None or teacher.role != Role.TEACHER.value:
+        raise AppError(42201, "指导教师不存在或不是教师账号", http_status=422)
+    if not teacher.is_active:
+        raise AppError(42202, "该教师账号已停用，不能指派", http_status=422)
+
+    ids = list(dict.fromkeys(student_ids))
+    students = list((await db.scalars(select(Student).where(Student.id.in_(ids)))).all())
+    if not students:
+        raise AppError(40401, "没有找到要指派的学生", http_status=404)
+
+    for student in students:
+        student.teacher_id = teacher_id
+    await db.commit()
+    return len(students), teacher.real_name or teacher.username

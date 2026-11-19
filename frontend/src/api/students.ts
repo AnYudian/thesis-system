@@ -1,4 +1,4 @@
-import { del, get, patch, post, put } from './http'
+import http, { del, get, patch, post, put } from './http'
 
 export interface Student {
   id: number
@@ -88,6 +88,21 @@ export const studentsApi = {
   /** 批量导入：文本原样上传，后端按行校验；能建的先建，错误的行带原因返回 */
   importCsv: (text: string, createAccount: boolean) =>
     post<ImportResult>('/students/import', { text, create_account: createAccount }),
+
+  /** Excel 导入：交给浏览器带 multipart 边界，后端用 openpyxl 解析 */
+  async importFile(file: File, createAccount: boolean): Promise<ImportResult> {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('create_account', String(createAccount))
+    const { data } = await http.post('/students/import/file', body)
+    return data.data as ImportResult
+  },
+
+  assignTeacher: (studentIds: number[], teacherId: number) =>
+    post<{ updated: number; teacher_name: string }>('/students/assign-teacher', {
+      student_ids: studentIds,
+      teacher_id: teacherId,
+    }),
 }
 
 export const teachersApi = {

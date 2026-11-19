@@ -121,6 +121,41 @@ async function submitCreate() {
   }
 }
 
+// ---- 管理员指定新密码 ----
+const pwdVisible = ref(false)
+const pwdTarget = ref<Account | null>(null)
+const pwdValue = ref('')
+const pwdConfirm = ref('')
+const pwdSaving = ref(false)
+
+function openSetPassword(row: Account) {
+  pwdTarget.value = row
+  pwdValue.value = ''
+  pwdConfirm.value = ''
+  pwdVisible.value = true
+}
+
+async function submitSetPassword() {
+  if (pwdValue.value.length < 6) {
+    ElMessage.warning('新密码至少 6 位')
+    return
+  }
+  if (pwdValue.value !== pwdConfirm.value) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  if (!pwdTarget.value) return
+
+  pwdSaving.value = true
+  try {
+    await accountsApi.setPassword(pwdTarget.value.id, pwdValue.value)
+    ElMessage.success(`已修改 ${pwdTarget.value.real_name || pwdTarget.value.username} 的密码`)
+    pwdVisible.value = false
+  } finally {
+    pwdSaving.value = false
+  }
+}
+
 // ---- 启停 / 重置密码 ----
 async function toggleActive(row: Account) {
   const next = !row.is_active
@@ -226,9 +261,10 @@ onMounted(load)
         <el-table-column label="创建时间" width="142">
           <template #default="{ row }"><span class="time">{{ formatTime(row.created_at) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="152" fixed="right">
+        <el-table-column label="操作" width="204" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="resetPassword(row)">重置密码</el-button>
+            <el-button link type="primary" @click="openSetPassword(row)">改密</el-button>
             <el-button
               v-if="row.id !== auth.user?.id"
               link
@@ -257,6 +293,26 @@ onMounted(load)
         />
       </div>
     </section>
+
+    <el-dialog v-model="pwdVisible" title="修改密码" width="440px">
+      <p class="pwd-who">
+        账号 <b>{{ pwdTarget?.username }}</b> ·
+        {{ pwdTarget?.real_name || '未填姓名' }}
+      </p>
+      <el-form label-width="86px" @submit.prevent>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdValue" type="password" show-password autocomplete="new-password" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="pwdConfirm" type="password" show-password autocomplete="new-password" />
+        </el-form-item>
+      </el-form>
+      <p class="dialog-note">管理员直接设置，不需要原密码；设置后请转告本人。6-72 位。</p>
+      <template #footer>
+        <el-button @click="pwdVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pwdSaving" @click="submitSetPassword">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" title="新建账号" width="480px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="86px">
@@ -415,6 +471,16 @@ onMounted(load)
   padding: 16px 0;
   font-size: 13px;
   color: var(--th-text-muted);
+}
+
+.pwd-who {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--th-text-muted);
+}
+
+.pwd-who b {
+  color: var(--th-primary);
 }
 
 .dialog-note {

@@ -42,4 +42,7 @@ export const accountsApi = {
     patch<Account>(`/users/${id}`, body),
   /** 重置为统一初始密码，返回值由页面弹窗告知管理员 */
   resetPassword: (id: number) => post<{ password: string }>(`/users/${id}/reset-password`),
+  /** 管理员直接设置指定密码（教师忘了密码，或要发一个临时密码时用） */
+  setPassword: (id: number, password: string) =>
+    post<null>(`/users/${id}/set-password`, { password }),
 }

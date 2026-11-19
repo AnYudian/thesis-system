@@ -7,8 +7,9 @@
 - 审核连点两下不能推进两个环节：查学生时加行锁，第二个请求会看到已经变了的状态
 """
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import AppError
 from app.models.audit_log import AuditLog
@@ -93,10 +94,13 @@ async def decide(
 
 
 def _review_query() -> Select:
+    # reviewer 是审核人，teacher 是该生的指导教师（管理员筛选要用），两个都用 users 表
+    teacher = aliased(User)
     return (
-        select(StageReview, Student.name, Student.sno, User.real_name)
+        select(StageReview, Student.name, Student.sno, User.real_name, teacher.real_name)
         .join(Student, StageReview.student_id == Student.id)
         .outerjoin(User, StageReview.reviewer_id == User.id)
+        .outerjoin(teacher, Student.teacher_id == teacher.id)
     )
 
 
@@ -107,6 +111,9 @@ async def list_reviews(
     scope_student_id: int | None = None,
     student_id: int | None = None,
     stage: str | None = None,
+    action: str | None = None,
+    keyword: str | None = None,
+    teacher_id: int | None = None,
     page: int = 1,
     size: int = 20,
 ) -> tuple[list[ReviewOut], int]:
@@ -119,6 +126,13 @@ async def list_reviews(
         conditions.append(Student.teacher_id == scope_teacher_id)
     if stage:
         conditions.append(StageReview.stage == stage)
+    if action:
+        conditions.append(StageReview.action == action)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        conditions.append(or_(Student.name.ilike(like), Student.sno.ilike(like)))
+    if teacher_id is not None:
+        conditions.append(Student.teacher_id == teacher_id)
 
     count_stmt = select(func.count()).select_from(StageReview).join(
         Student, StageReview.student_id == Student.id
@@ -139,6 +153,7 @@ async def list_reviews(
             student_id=review.student_id,
             student_name=name,
             sno=sno,
+            teacher_name=teacher_name,
             stage=review.stage,  # type: ignore[arg-type]
             action=review.action,  # type: ignore[arg-type]
             from_stage=review.from_stage,  # type: ignore[arg-type]
@@ -148,7 +163,7 @@ async def list_reviews(
             reviewer_name=reviewer_name,
             created_at=review.created_at,
         )
-        for review, name, sno, reviewer_name in rows
+        for review, name, sno, reviewer_name, teacher_name in rows
     ]
     return items, total
 

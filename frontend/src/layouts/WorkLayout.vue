@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const pwdVisible = ref(false)
 
 const roleLabel = computed(() => {
   const map = { ADMIN: '管理员', TEACHER: '教师', STUDENT: '学生' } as const
@@ -66,6 +68,7 @@ function logout() {
       <div class="account">
         <span class="name">{{ auth.displayName }}</span>
         <el-tag effect="plain" size="small">{{ roleLabel }}</el-tag>
+        <el-button text size="small" @click="pwdVisible = true">修改密码</el-button>
         <el-button text size="small" @click="logout">退出登录</el-button>
       </div>
     </header>
@@ -73,6 +76,8 @@ function logout() {
     <main class="body">
       <router-view />
     </main>
+
+    <ChangePasswordDialog v-model="pwdVisible" />
 
     <footer class="foot">
       <span>毕业论文（设计）全过程进度跟踪与智能审阅系统</span>

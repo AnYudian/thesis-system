@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 
-import { reviewsApi, type PendingItem, type ReviewAction } from '@/api/reviews'
+import {
+  reviewsApi,
+  type PendingItem,
+  type ReviewAction,
+  type StageReview,
+} from '@/api/reviews'
+import { teachersApi } from '@/api/students'
 import { STAGES, STAGE_SHORT } from '@/constants/stages'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
@@ -16,6 +22,68 @@ const items = ref<PendingItem[]>([])
 
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
 const stageIndex = (code: string) => STAGES.findIndex((s) => s.code === code) + 1
+
+// ---- Tab ----
+const tab = ref<'pending' | 'history'>('pending')
+
+// ---- 流转记录 ----
+// 待处理表只关心"现在停在哪"，历史表要回答"谁在什么时候放行/退回了谁"，
+// 两者的筛选条件、分页都不同，所以拆成独立一套状态，首次切过去才请求。
+const historyLoading = ref(false)
+const historyItems = ref<StageReview[]>([])
+const historyTotal = ref(0)
+const historyLoaded = ref(false)
+const historyQuery = reactive({
+  page: 1,
+  size: 10,
+  keyword: '',
+  stage: '',
+  action: '' as '' | ReviewAction,
+  teacherId: undefined as number | undefined,
+})
+const teachers = ref<{ id: number; real_name: string | null; username: string }[]>([])
+
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    const data = await reviewsApi.list({
+      page: historyQuery.page,
+      size: historyQuery.size,
+      keyword: historyQuery.keyword || undefined,
+      stage: historyQuery.stage || undefined,
+      action: historyQuery.action || undefined,
+      teacher_id: historyQuery.teacherId,
+    })
+    historyItems.value = data.items
+    historyTotal.value = data.total
+    historyLoaded.value = true
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function searchHistory() {
+  historyQuery.page = 1
+  loadHistory()
+}
+
+function resetHistory() {
+  historyQuery.keyword = ''
+  historyQuery.stage = ''
+  historyQuery.action = ''
+  historyQuery.teacherId = undefined
+  searchHistory()
+}
+
+function onTabChange(name: string | number) {
+  if (name === 'history' && !historyLoaded.value) loadHistory()
+}
+
+// 通过：末尾环节的 to_stage 仍是本环节，光看代码会误以为没动，这里翻成人话
+function toLabel(row: StageReview) {
+  if (row.action === 'RETURN') return '留在本环节修改'
+  return stageIndex(row.to_stage) === STAGES.length ? '归档' : stageLabel(row.to_stage)
+}
 
 async function load() {
   loading.value = true
@@ -59,6 +127,8 @@ async function submit() {
     )
     dialog.visible = false
     await load()
+    // 刚才的审核就是一条新历史，标记失效，下次切到历史 Tab 重新拉
+    historyLoaded.value = false
   } catch {
     // 拦截器已经弹过具体原因（比如状态已变化），这里保持弹窗打开让老师重试
   } finally {
@@ -66,7 +136,12 @@ async function submit() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (isAdmin.value) {
+    teachers.value = await teachersApi.list().catch(() => [])
+  }
+})
 </script>
 
 <template>
@@ -81,10 +156,16 @@ onMounted(load)
             : '学生完成当前环节后由你放行或退回。通过进入下一环节，退回必须写明要改的地方。' }}
         </p>
       </div>
-      <span class="count">{{ isAdmin ? '进行中' : '待处理' }} <b>{{ items.length }}</b> 人</span>
+      <span class="count">
+        {{ tab === 'pending' ? (isAdmin ? '进行中' : '待处理') : '流转记录' }}
+        <b>{{ tab === 'pending' ? items.length : historyTotal }}</b>
+        {{ tab === 'pending' ? '人' : '条' }}
+      </span>
     </header>
 
-    <section class="table-wrap">
+    <el-tabs v-model="tab" class="stage-tabs" @tab-change="onTabChange">
+      <el-tab-pane label="待处理" name="pending">
+        <section class="table-wrap">
       <el-table v-loading="loading" :data="items" stripe row-key="student_id">
         <el-table-column label="学生" width="108">
           <template #default="{ row }">
@@ -138,7 +219,109 @@ onMounted(load)
         <el-button :icon="Refresh" plain size="small" @click="load">刷新</el-button>
         <span class="legend-text">共 {{ STAGES.length }} 个环节，最后一环通过后自动归档。</span>
       </div>
-    </section>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="流转记录" name="history">
+        <section class="toolbar">
+          <el-input
+            v-model="historyQuery.keyword"
+            class="tool-input"
+            placeholder="学生姓名或学号"
+            clearable
+            :prefix-icon="Search"
+            @keyup.enter="searchHistory"
+            @clear="searchHistory"
+          />
+          <el-select
+            v-model="historyQuery.stage"
+            class="tool-select"
+            placeholder="全部环节"
+            clearable
+            @change="searchHistory"
+          >
+            <el-option v-for="s in STAGES" :key="s.code" :label="s.label" :value="s.code" />
+          </el-select>
+          <el-select
+            v-model="historyQuery.action"
+            class="tool-select"
+            placeholder="全部动作"
+            clearable
+            @change="searchHistory"
+          >
+            <el-option label="通过" value="APPROVE" />
+            <el-option label="退回" value="RETURN" />
+          </el-select>
+          <el-select
+            v-if="isAdmin"
+            v-model="historyQuery.teacherId"
+            class="tool-select"
+            placeholder="全部指导教师"
+            clearable
+            @change="searchHistory"
+          >
+            <el-option v-for="t in teachers" :key="t.id" :label="t.real_name || t.username" :value="t.id" />
+          </el-select>
+          <el-button :icon="Search" @click="searchHistory">查询</el-button>
+          <el-button :icon="Refresh" plain @click="resetHistory">重置</el-button>
+        </section>
+
+        <section class="table-wrap">
+          <el-table v-loading="historyLoading" :data="historyItems" stripe row-key="id">
+            <el-table-column label="时间" width="156">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="学生" width="110">
+              <template #default="{ row }">
+                <span class="cell-main">{{ row.student_name }}</span>
+                <span class="cell-sub">{{ row.sno }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="isAdmin" label="指导教师" width="100">
+              <template #default="{ row }">{{ row.teacher_name || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="环节" width="140">
+              <template #default="{ row }">{{ stageLabel(row.stage) }}</template>
+            </el-table-column>
+            <el-table-column label="动作" width="76">
+              <template #default="{ row }">
+                <span class="opinion" :class="row.action === 'RETURN' ? 'is-return' : 'is-approve'">
+                  {{ row.action === 'RETURN' ? '退回' : '通过' }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="去向" width="130">
+              <template #default="{ row }">{{ toLabel(row) }}</template>
+            </el-table-column>
+            <el-table-column label="意见" min-width="200">
+              <template #default="{ row }">
+                <span v-if="row.comment" class="opinion-text" :title="row.comment">{{ row.comment }}</span>
+                <span v-else class="cell-sub">未填写意见</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="审核人" width="92">
+              <template #default="{ row }">{{ row.reviewer_name || '—' }}</template>
+            </el-table-column>
+            <template #empty>
+              <p class="empty">还没有审核记录。学生材料通过或退回后，这里会留下完整流水。</p>
+            </template>
+          </el-table>
+
+          <div class="pager">
+            <el-pagination
+              v-model:current-page="historyQuery.page"
+              v-model:page-size="historyQuery.size"
+              :total="historyTotal"
+              :page-sizes="[10, 20, 50]"
+              layout="sizes, prev, pager, next"
+              background
+              @current-change="loadHistory"
+              @size-change="searchHistory"
+            />
+          </div>
+        </section>
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog
       v-model="dialog.visible"
@@ -247,6 +430,40 @@ onMounted(load)
   border: 1px solid var(--th-border);
   border-radius: 5px;
   box-shadow: 0 6px 16px rgba(16, 31, 51, 0.05);
+}
+
+.stage-tabs :deep(.el-tabs__header) {
+  margin-bottom: 12px;
+}
+
+.stage-tabs :deep(.el-tabs__item) {
+  font-size: 14px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: var(--th-surface);
+  border: 1px solid var(--th-border);
+  border-radius: 5px;
+}
+
+.tool-input {
+  width: 200px;
+}
+
+.tool-select {
+  width: 150px;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
 }
 
 .cell-main {

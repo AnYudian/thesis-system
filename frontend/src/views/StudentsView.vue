@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import {
+  ElMessage,
+  ElMessageBox,
+  type FormInstance,
+  type FormRules,
+  type UploadFile,
+  type UploadUserFile,
+} from 'element-plus'
+import { Plus, Refresh, Search, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 
 import {
   studentsApi,
@@ -99,6 +106,17 @@ const rules: FormRules = {
   major: [{ required: true, message: '请输入专业', trigger: 'blur' }],
   class_name: [{ required: true, message: '请输入班级', trigger: 'blur' }],
   grade: [{ required: true, message: '请输入年级', trigger: 'blur' }],
+  // 指导教师决定后续谁审核材料、谁能看到这名学生，所以建档时不允许留空；
+  // 0 是下拉框的初始占位值，不能当成一个真实教师 ID 提交给后端。
+  teacherId: [
+    {
+      validator: (_rule: unknown, value: number, callback: (error?: Error) => void) => {
+        if (!value) callback(new Error('请选择指导教师'))
+        else callback()
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 function openCreate() {
@@ -147,7 +165,7 @@ async function submitStudent() {
         major: form.major.trim(),
         class_name: form.class_name.trim(),
         grade: form.grade.trim(),
-        teacher_id: form.teacherId || null,
+        teacher_id: form.teacherId,
         current_stage: form.current_stage,
         create_account: form.create_account,
       }
@@ -170,9 +188,7 @@ async function submitStudent() {
         class_name: form.class_name.trim(),
         grade: form.grade.trim(),
         current_stage: form.current_stage,
-        ...(form.teacherId
-          ? { teacher_id: form.teacherId }
-          : { teacher_id: null, clear_teacher: true }),
+        teacher_id: form.teacherId,
       })
       dialogVisible.value = false
       ElMessage.success('已保存')
@@ -260,29 +276,50 @@ async function removeStudent(row: Student) {
 // ---- 批量导入 ----
 const importVisible = ref(false)
 const importing = ref(false)
+const importMode = ref<'text' | 'excel'>('text')
 const importText = ref('')
+const importFile = ref<File | null>(null)
+const importFileList = ref<UploadUserFile[]>([])
 const importAccount = ref(true)
 const importResult = ref<ImportResult | null>(null)
 
+// 指导教师是必填列，示例里必须带上，否则照着示例粘贴也会被整行跳过
 const IMPORT_SAMPLE =
   '20221201,张三,软件工程,软工2201,2022,teacher\n' +
-  '20221202,李四,软件工程,软工2201,2022\n'
+  '20221202,李四,软件工程,软工2201,2022,teacher\n'
 
 function openImport() {
+  importMode.value = 'text'
   importText.value = ''
+  importFile.value = null
+  importFileList.value = []
   importAccount.value = true
   importResult.value = null
   importVisible.value = true
 }
 
+// el-upload 只负责交互，原始 File 要自己存下来，提交时才能真正发给后端
+function onImportFileChange(file: UploadFile) {
+  importFile.value = (file.raw as File) ?? null
+}
+
 async function submitImport() {
-  if (!importText.value.trim()) {
+  if (importMode.value === 'excel') {
+    if (!importFile.value) {
+      ElMessage.warning('请先选择 .xlsx 文件')
+      return
+    }
+  } else if (!importText.value.trim()) {
     ElMessage.warning('请先粘贴名单')
     return
   }
+
   importing.value = true
   try {
-    importResult.value = await studentsApi.importCsv(importText.value, importAccount.value)
+    importResult.value =
+      importMode.value === 'excel'
+        ? await studentsApi.importFile(importFile.value as File, importAccount.value)
+        : await studentsApi.importCsv(importText.value, importAccount.value)
     const res = importResult.value
     if (res.created) {
       ElMessage.success(`已导入 ${res.created} 人${res.skipped ? `，跳过 ${res.skipped} 行` : ''}`)
@@ -292,6 +329,42 @@ async function submitImport() {
     }
   } finally {
     importing.value = false
+  }
+}
+
+// ---- 批量指派导师 ----
+// 教师有变动时（接手别人的学生、离职交接）逐个改太慢，勾选后一次改派
+const studentTable = ref<{ clearSelection: () => void } | null>(null)
+const selectedIds = ref<number[]>([])
+const assignVisible = ref(false)
+const assignTeacherId = ref<number | undefined>(undefined)
+const assigning = ref(false)
+
+function onSelectionChange(rows: Student[]) {
+  selectedIds.value = rows.map((r) => r.id)
+}
+
+function openAssign() {
+  if (!selectedIds.value.length) return
+  assignTeacherId.value = undefined
+  assignVisible.value = true
+}
+
+async function submitAssign() {
+  if (!assignTeacherId.value) {
+    ElMessage.warning('请选择要指派的指导教师')
+    return
+  }
+  assigning.value = true
+  try {
+    const res = await studentsApi.assignTeacher(selectedIds.value, assignTeacherId.value)
+    ElMessage.success(`已将 ${res.updated} 名学生指派给 ${res.teacher_name}`)
+    assignVisible.value = false
+    selectedIds.value = []
+    studentTable.value?.clearSelection()
+    await load()
+  } finally {
+    assigning.value = false
   }
 }
 
@@ -350,32 +423,49 @@ onMounted(async () => {
       </el-select>
       <el-button :icon="Search" @click="search">查询</el-button>
       <el-button :icon="Refresh" plain @click="reset">重置</el-button>
+      <el-button
+        v-if="isAdmin && selectedIds.length"
+        type="primary"
+        plain
+        :icon="UserFilled"
+        @click="openAssign"
+      >
+        指派导师（{{ selectedIds.length }}）
+      </el-button>
       <span class="count">共 <b>{{ total }}</b> 人</span>
     </section>
 
     <section class="table-wrap">
-      <el-table v-loading="loading" :data="items" stripe row-key="id">
-        <el-table-column label="学号" width="132">
+      <el-table
+        ref="studentTable"
+        v-loading="loading"
+        :data="items"
+        stripe
+        row-key="id"
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column v-if="isAdmin" type="selection" width="42" />
+        <el-table-column label="学号" width="128">
           <template #default="{ row }">
             <span class="cell-main">{{ row.sno }}</span>
             <span v-if="row.username" class="cell-sub">账号 {{ row.username }}</span>
             <span v-else class="cell-sub muted">未开通账号</span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="姓名" width="84" />
-        <el-table-column label="专业 / 班级" min-width="188">
+        <el-table-column prop="name" label="姓名" width="80" />
+        <el-table-column label="专业 / 班级" min-width="176">
           <template #default="{ row }">
             <span class="cell-main">{{ row.major }}</span>
             <span class="cell-sub">{{ row.class_name }} · {{ row.grade }} 级</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="isAdmin" label="指导教师" width="96">
+        <el-table-column v-if="isAdmin" label="指导教师" width="92">
           <template #default="{ row }">
             <span v-if="row.teacher_name">{{ row.teacher_name }}</span>
             <span v-else class="muted">未指派</span>
           </template>
         </el-table-column>
-        <el-table-column label="当前环节" width="168">
+        <el-table-column label="当前环节" width="160">
           <template #default="{ row }">
             <span class="stage-pill">
               <em>{{ String(stageIndex(row.current_stage)).padStart(2, '0') }}</em>
@@ -383,7 +473,7 @@ onMounted(async () => {
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="课题" min-width="240">
+        <el-table-column label="课题" min-width="220">
           <template #default="{ row }">
             <span v-if="row.topic_title" class="topic" :title="row.topic_title">{{ row.topic_title }}</span>
             <span v-else class="muted">未选题</span>
@@ -440,9 +530,8 @@ onMounted(async () => {
         <el-form-item label="年级" prop="grade">
           <el-input v-model="form.grade" placeholder="如 2022" />
         </el-form-item>
-        <el-form-item label="指导教师">
-          <el-select v-model="form.teacherId" placeholder="暂不指派" style="width: 100%">
-            <el-option label="暂不指派" :value="0" />
+        <el-form-item label="指导教师" prop="teacherId">
+          <el-select v-model="form.teacherId" placeholder="请选择指导教师" style="width: 100%">
             <el-option v-for="t in teachers" :key="t.id" :label="t.real_name || t.username" :value="t.id" />
           </el-select>
         </el-form-item>
@@ -463,19 +552,72 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
+    <!-- 指派导师 -->
+    <el-dialog v-model="assignVisible" title="指派指导教师" width="480px" destroy-on-close>
+      <p class="dialog-note">
+        已选 <b>{{ selectedIds.length }}</b> 名学生，将统一改派给下方教师。
+        只改归属关系，不影响已有材料与审核记录。
+      </p>
+      <el-form label-width="82px">
+        <el-form-item label="指导教师" required>
+          <el-select v-model="assignTeacherId" placeholder="请选择指导教师" style="width: 100%">
+            <el-option
+              v-for="t in teachers"
+              :key="t.id"
+              :label="`${t.real_name || '未命名'}（${t.username}）`"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assigning" @click="submitAssign">确认指派</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量导入 -->
     <el-dialog v-model="importVisible" title="批量导入学生" width="660px" destroy-on-close>
+      <el-radio-group v-model="importMode" class="import-mode">
+        <el-radio-button value="text">粘贴文本 / CSV</el-radio-button>
+        <el-radio-button value="excel">上传 Excel</el-radio-button>
+      </el-radio-group>
+
       <p class="import-tip">
         一行一个学生，列顺序固定为
-        <b>学号, 姓名, 专业, 班级, 年级, 指导教师账号（可选）</b>。表头行可留可删；从 Excel 直接复制（制表符）也能识别。
+        <b>学号, 姓名, 专业, 班级, 年级, 指导教师账号</b>。指导教师必填，填教师的登录账号；
+        表头行可留可删。
       </p>
-      <el-input
-        v-model="importText"
-        type="textarea"
-        :rows="8"
-        :placeholder="IMPORT_SAMPLE"
-        class="import-input"
-      />
+
+      <template v-if="importMode === 'text'">
+        <el-input
+          v-model="importText"
+          type="textarea"
+          :rows="8"
+          :placeholder="IMPORT_SAMPLE"
+          class="import-input"
+        />
+        <p class="import-hint">从 Excel 直接复制整块单元格粘贴进来也能识别（制表符分隔）。</p>
+      </template>
+      <template v-else>
+        <el-upload
+          v-model:file-list="importFileList"
+          drag
+          :auto-upload="false"
+          :limit="1"
+          accept=".xlsx"
+          :on-change="onImportFileChange"
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">把 .xlsx 拖到这里，或<em>点击选择</em></div>
+          <template #tip>
+            <div class="el-upload__tip">
+              仅支持 .xlsx（.xls 请先另存为 .xlsx），单个文件不超过 5MB；第一行可为表头。
+            </div>
+          </template>
+        </el-upload>
+      </template>
+
       <el-checkbox v-model="importAccount" class="import-check">
         同时开通学生账号（账号=学号，初始密码 123456）
       </el-checkbox>
@@ -559,6 +701,20 @@ onMounted(async () => {
 
 .import-tip b {
   color: var(--th-primary);
+}
+
+.import-mode {
+  margin-bottom: 10px;
+}
+
+.import-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+
+:deep(.el-upload-dragger) {
+  padding: 18px 10px;
 }
 
 .import-input :deep(textarea) {

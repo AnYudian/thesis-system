@@ -152,3 +152,8 @@ async def reset_password(db: AsyncSession, account: User) -> str:
     account.password_hash = hash_password(DEFAULT_PASSWORD)
     await db.commit()
     return DEFAULT_PASSWORD
+
+
+async def set_password(db: AsyncSession, account: User, password: str) -> None:
+    account.password_hash = hash_password(password)
+    await db.commit()

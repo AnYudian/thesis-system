@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.core.security import verify_password
+from app.core.security import hash_password, verify_password
 from app.models.audit_log import AuditLog
 from app.models.user import User
 
@@ -34,4 +34,25 @@ async def record_login(db: AsyncSession, user: User) -> None:
             detail={"username": user.username, "role": user.role},
         )
     )
+    await db.commit()
+
+
+async def change_password(db: AsyncSession, user: User, old_password: str, new_password: str) -> None:
+    if not verify_password(old_password, user.password_hash):
+        raise AppError(40102, "原密码不正确", http_status=401)
+    if old_password == new_password:
+        raise AppError(42240, "新密码不能与原密码相同", http_status=422)
+
+    user.password_hash = hash_password(new_password)
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="PASSWORD_CHANGE",
+            target_type="USER",
+            target_id=str(user.id),
+            detail={"username": user.username},
+        )
+    )
+    # 已签发的 token 仍然有效：本系统 token 只含 user_id，
+    # 改密后主动失效需要引入 token 版本号，等接入统一认证时一起做。
     await db.commit()

@@ -17,6 +17,7 @@ class ReviewOut(BaseModel):
     student_id: int
     student_name: str
     sno: str
+    teacher_name: str | None = None
     stage: Stage
     action: ReviewAction
     from_stage: Stage

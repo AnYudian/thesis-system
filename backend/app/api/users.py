@@ -21,6 +21,7 @@ from app.schemas.user import (
     AccountPage,
     AccountUpdate,
     ResetPasswordOut,
+    SetPasswordIn,
 )
 from app.services import account_service as svc
 from app.services import log_service
@@ -119,3 +120,20 @@ async def reset_password(
         detail={"username": account.username},
     )
     return ok(ResetPasswordOut(password=password), message="密码已重置")
+
+
+@router.post("/{user_id}/set-password", response_model=ApiResponse[None], summary="直接设置新密码")
+async def set_password(
+    db: DBDep, actor: AdminUser, user_id: int, data: SetPasswordIn
+) -> ApiResponse[None]:
+    account = await svc.get_account_or_404(db, user_id)
+    await svc.set_password(db, account, data.password)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="ACCOUNT_SET_PASSWORD",
+        target_type="USER",
+        target_id=account.id,
+        detail={"username": account.username},
+    )
+    return ok(message="密码已设置")

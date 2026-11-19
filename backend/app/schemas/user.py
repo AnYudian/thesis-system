@@ -53,3 +53,9 @@ class AccountCreated(BaseModel):
 
 class ResetPasswordOut(BaseModel):
     password: str
+
+
+class SetPasswordIn(BaseModel):
+    """管理员直接设置新密码：不需要原密码，适合教师忘了密码的场景。"""
+
+    password: str = Field(min_length=6, max_length=72)

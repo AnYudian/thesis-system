@@ -43,7 +43,10 @@ async def list_reviews(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
     stage: Annotated[Stage | None, Query()] = None,
+    action: Annotated[ReviewAction | None, Query()] = None,
+    keyword: Annotated[str | None, Query(max_length=50)] = None,
     student_id: Annotated[int | None, Query()] = None,
+    teacher_id: Annotated[int | None, Query()] = None,
 ) -> ApiResponse[ReviewPage]:
     # 数据范围在服务端夹死，前端传什么 student_id 都不会越权
     scope_teacher_id: int | None = None
@@ -65,6 +68,9 @@ async def list_reviews(
         scope_student_id=scope_student_id,
         student_id=student_id,
         stage=stage.value if stage else None,
+        action=action.value if action else None,
+        keyword=keyword,
+        teacher_id=teacher_id,
         page=page,
         size=size,
     )
@@ -101,6 +107,7 @@ async def decide(
             student_id=review.student_id,
             student_name=updated.name,
             sno=updated.sno,
+            teacher_name=actor.real_name or actor.username,
             stage=review.stage,  # type: ignore[arg-type]
             action=review.action,  # type: ignore[arg-type]
             from_stage=review.from_stage,  # type: ignore[arg-type]

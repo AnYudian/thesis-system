@@ -35,7 +35,8 @@ class StudentCreate(BaseModel):
     major: str = Field(min_length=1, max_length=100)
     class_name: str = Field(min_length=1, max_length=50)
     grade: str = Field(min_length=2, max_length=10)
-    teacher_id: int | None = None
+    # 新建学生必须定导师：没有导师的学生在阶段审核里没人能放行
+    teacher_id: int
     current_stage: Stage = Stage.TOPIC
     create_account: bool = Field(default=True, description="是否同时开通学生登录账号")
 
@@ -106,3 +107,13 @@ class ImportResult(BaseModel):
     skipped: int
     errors: list[ImportErrorItem]
     initial_password: str | None = None
+
+
+class AssignTeacherIn(BaseModel):
+    student_ids: list[int] = Field(min_length=1, max_length=200)
+    teacher_id: int
+
+
+class AssignTeacherOut(BaseModel):
+    updated: int
+    teacher_name: str

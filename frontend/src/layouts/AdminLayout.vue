@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, type Component } from 'vue'
+import { computed, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   DataBoard,
@@ -13,11 +13,13 @@ import {
   User,
 } from '@element-plus/icons-vue'
 
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const pwdVisible = ref(false)
 
 type MenuItem = { title: string; icon: Component; to?: string; tag?: string; ready: boolean }
 
@@ -95,6 +97,7 @@ function logout() {
               <span>管理员</span>
             </div>
           </div>
+          <el-button text size="small" @click="pwdVisible = true">修改密码</el-button>
           <el-button text size="small" @click="logout">
             <el-icon class="btn-icon"><SwitchButton /></el-icon>
             退出
@@ -105,6 +108,7 @@ function logout() {
       <main class="content">
         <router-view />
       </main>
+      <ChangePasswordDialog v-model="pwdVisible" />
     </div>
   </div>
 </template>
