@@ -45,6 +45,12 @@ const router = createRouter({
           meta: { title: '学生材料', roles: ['TEACHER'] },
         },
         {
+          path: 'reviews',
+          name: 'teacher-reviews',
+          component: () => import('@/views/ReviewsView.vue'),
+          meta: { title: '阶段审核', roles: ['TEACHER'] },
+        },
+        {
           path: 'my-materials',
           name: 'student-materials',
           component: () => import('@/views/StudentMaterialsView.vue'),
@@ -74,6 +80,12 @@ const router = createRouter({
           name: 'admin-materials',
           component: () => import('@/views/MaterialsView.vue'),
           meta: { title: '材料中心' },
+        },
+        {
+          path: 'reviews',
+          name: 'admin-reviews',
+          component: () => import('@/views/ReviewsView.vue'),
+          meta: { title: '阶段流转' },
         },
       ],
     },

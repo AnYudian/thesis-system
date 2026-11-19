@@ -20,6 +20,7 @@ const nav = computed(() => {
       { to: '/', title: '工作台', exact: true },
       { to: '/my-students', title: '我的学生' },
       { to: '/materials', title: '学生材料' },
+      { to: '/reviews', title: '阶段审核' },
     ]
   }
   return [

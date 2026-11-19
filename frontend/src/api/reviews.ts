@@ -1,0 +1,62 @@
+import { get, post } from './http'
+
+export type ReviewAction = 'APPROVE' | 'RETURN'
+
+export interface PendingItem {
+  student_id: number
+  sno: string
+  name: string
+  teacher_name: string | null
+  stage: string
+  material_count: number
+  latest_material_at: string | null
+  latest_version: number | null
+  last_action: ReviewAction | null
+  last_comment: string | null
+  last_reviewed_at: string | null
+}
+
+export interface StageReview {
+  id: number
+  student_id: number
+  student_name: string
+  sno: string
+  stage: string
+  action: ReviewAction
+  from_stage: string
+  to_stage: string
+  material_version: number | null
+  comment: string | null
+  reviewer_name: string | null
+  created_at: string
+}
+
+export interface ReviewPage {
+  items: StageReview[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface ReviewResult {
+  review: StageReview
+  current_stage: string
+  status: string
+}
+
+export interface ReviewQuery {
+  page?: number
+  size?: number
+  stage?: string
+  student_id?: number
+}
+
+export const reviewsApi = {
+  pending: () => get<PendingItem[]>('/reviews/pending'),
+
+  list: (params?: ReviewQuery) => get<ReviewPage>('/reviews', params as Record<string, unknown>),
+
+  /** 通过 / 退回。退回时后端会再校验一次 comment 非空，前端校验只是少跑一趟网络 */
+  decide: (studentId: number, action: ReviewAction, comment?: string) =>
+    post<ReviewResult>(`/reviews/${studentId}`, { action, comment: comment?.trim() || null }),
+}

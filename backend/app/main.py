@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.materials import router as materials_router
+from app.api.reviews import router as reviews_router
 from app.api.stats import router as stats_router
 from app.api.students import router as students_router
 from app.api.users import router as users_router
@@ -31,7 +32,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        description="毕业论文（设计）全过程进度跟踪与智能审阅系统。当前阶段：P3 材料中心。",
+        description="毕业论文（设计）全过程进度跟踪与智能审阅系统。当前阶段：P4 阶段审核。",
         redoc_url=None,  # 只保留 /docs，少一个入口少一份维护成本
     )
 
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(stats_router, prefix="/api")
     app.include_router(students_router, prefix="/api")
     app.include_router(materials_router, prefix="/api")
+    app.include_router(reviews_router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
     async def index() -> ApiResponse:

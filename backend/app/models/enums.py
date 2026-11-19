@@ -37,6 +37,16 @@ STAGE_ORDER: list[Stage] = [
     Stage.ARCHIVE,
 ]
 
+# 审核通过后进入的下一环节；最后一个环节没有下一站，通过即归档
+STAGE_NEXT: dict[Stage, Stage] = {
+    STAGE_ORDER[i]: STAGE_ORDER[i + 1] for i in range(len(STAGE_ORDER) - 1)
+}
+
+
+class ReviewAction(str, Enum):
+    APPROVE = "APPROVE"
+    RETURN = "RETURN"
+
 STAGE_LABELS: dict[Stage, str] = {
     Stage.TOPIC: "选题/双向选择",
     Stage.TASK_BOOK: "任务书下达",

@@ -1,22 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
+import { reviewsApi, type StageReview } from '@/api/reviews'
 import { studentsApi, type StudentDetail } from '@/api/students'
 import { STAGES } from '@/constants/stages'
+import { formatTime } from '@/utils/format'
 
 const loading = ref(true)
 const notFound = ref(false)
 const detail = ref<StudentDetail | null>(null)
+const reviews = ref<StageReview[]>([])
 
 const currentIndex = computed(() =>
   detail.value ? STAGES.findIndex((s) => s.code === detail.value?.current_stage) : -1,
 )
 
+const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
+
+// 只认“当前环节”的退回意见：旧环节的退回学生已经改完了，再提醒会误导
+const latestReturn = computed(() => {
+  if (!detail.value) return null
+  return reviews.value.find((r) => r.action === 'RETURN' && r.stage === detail.value?.current_stage) ?? null
+})
+
 onMounted(async () => {
   try {
     const data = await studentsApi.me()
-    if (data) detail.value = data
-    else notFound.value = true
+    if (data) {
+      detail.value = data
+      const page = await reviewsApi.list({ page: 1, size: 5 })
+      reviews.value = page.items
+    } else notFound.value = true
   } catch {
     // 网络或服务异常：保持空状态，避免整页白屏
     notFound.value = true
@@ -56,6 +70,15 @@ onMounted(async () => {
         </div>
       </section>
 
+      <section v-if="latestReturn" class="return-banner">
+        <span class="rb-label">退回修改</span>
+        <div>
+          <p class="rb-title">「{{ stageLabel(latestReturn.stage) }}」未通过</p>
+          <p class="rb-text">{{ latestReturn.comment }}</p>
+        </div>
+        <span class="rb-meta">{{ latestReturn.reviewer_name || '指导教师' }} · {{ formatTime(latestReturn.created_at) }}</span>
+      </section>
+
       <section class="panel">
         <header class="panel-head">
           <h3>毕业设计进度</h3>
@@ -89,6 +112,36 @@ onMounted(async () => {
         </div>
         <p v-else class="empty">还没选题。请联系指导教师或管理员完成课题建档。</p>
       </section>
+
+      <section class="panel">
+        <header class="panel-head">
+          <h3>审核记录</h3>
+          <p>教师对每个环节的通过 / 退回都会留痕，最近 5 条</p>
+        </header>
+
+        <ul v-if="reviews.length" class="review-list">
+          <li v-for="r in reviews" :key="r.id" class="review-item">
+            <span class="review-dot" :class="{ 'is-return': r.action === 'RETURN' }" />
+            <div class="review-body">
+              <p class="review-line">
+                <span class="review-stage">{{ stageLabel(r.stage) }}</span>
+                <span class="review-action" :class="r.action === 'RETURN' ? 'is-return' : 'is-approve'">
+                  {{ r.action === 'RETURN' ? '退回' : '通过' }}
+                </span>
+                <span v-if="r.action === 'APPROVE'" class="review-to">
+                  → {{ r.to_stage === r.stage ? '归档' : stageLabel(r.to_stage) }}
+                </span>
+              </p>
+              <p class="review-comment">{{ r.comment || '未填写意见' }}</p>
+              <p class="review-meta">
+                {{ formatTime(r.created_at) }} · {{ r.reviewer_name || '—' }}
+                <template v-if="r.material_version"> · 审阅时第 {{ r.material_version }} 版</template>
+              </p>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="empty">还没有审核记录。教师处理后会显示在这里。</p>
+      </section>
     </template>
 
     <div v-else-if="!loading && notFound" class="empty-card">
@@ -99,6 +152,139 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.return-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: #fdf6ec;
+  border: 1px solid rgba(163, 58, 42, 0.25);
+  border-left: 4px solid #a33a2a;
+  border-radius: 4px;
+}
+
+.rb-label {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  color: #a33a2a;
+  background: rgba(163, 58, 42, 0.08);
+  border: 1px solid rgba(163, 58, 42, 0.25);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.rb-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #8c3225;
+}
+
+.rb-text {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #6b4a3f;
+  white-space: pre-line;
+}
+
+.rb-meta {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: #a5867a;
+  white-space: nowrap;
+}
+
+.review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--th-border-soft);
+}
+
+.review-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.review-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--th-primary);
+  box-shadow: 0 0 0 3px rgba(29, 51, 84, 0.1);
+}
+
+.review-dot.is-return {
+  background: #a33a2a;
+  box-shadow: 0 0 0 3px rgba(163, 58, 42, 0.12);
+}
+
+.review-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.review-stage {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--th-primary-deep);
+}
+
+.review-action {
+  padding: 1px 6px;
+  font-size: 11.5px;
+  border-radius: 3px;
+}
+
+.review-action.is-approve {
+  color: var(--th-primary);
+  background: rgba(29, 51, 84, 0.06);
+  border: 1px solid var(--th-border-soft);
+}
+
+.review-action.is-return {
+  color: #a33a2a;
+  background: rgba(163, 58, 42, 0.08);
+  border: 1px solid rgba(163, 58, 42, 0.25);
+}
+
+.review-to {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+
+.review-comment {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--th-text-muted);
+  white-space: pre-line;
+}
+
+.review-meta {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: #a29a8b;
+}
+
 .page {
   display: flex;
   flex-direction: column;
