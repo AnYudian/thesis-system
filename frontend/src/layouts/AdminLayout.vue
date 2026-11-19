@@ -21,7 +21,7 @@ const router = useRouter()
 const menu = [
   { title: '数据概览', icon: DataBoard, to: '/admin', ready: true },
   { title: '学生与课题', icon: User, to: '/admin/students', ready: true },
-  { title: '材料中心', icon: FolderOpened, tag: 'P3', ready: false },
+  { title: '材料中心', icon: FolderOpened, to: '/admin/materials', ready: true },
   { title: '阶段审核', icon: Stamp, tag: 'P4', ready: false },
   { title: '账号管理', icon: Setting, tag: 'P4', ready: false },
 ]

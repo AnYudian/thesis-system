@@ -25,5 +25,6 @@ class OverviewOut(BaseModel):
     teachers_total: int
     in_progress: int
     archived: int
+    materials_total: int
     stages: list[StageCount]
     recent_logins: list[RecentLogin]

@@ -20,6 +20,7 @@ export interface Overview {
   teachers_total: number
   in_progress: number
   archived: number
+  materials_total: number
   stages: StageCount[]
   recent_logins: RecentLogin[]
 }

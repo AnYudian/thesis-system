@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Refresh, TrendCharts, User, UserFilled, Finished } from '@element-plus/icons-vue'
+import { Refresh, TrendCharts, User, UserFilled, Finished, FolderOpened } from '@element-plus/icons-vue'
 
 import { statsApi, type Overview } from '@/api/stats'
 import { STAGES } from '@/constants/stages'
@@ -29,6 +29,7 @@ const metrics = computed(() => [
   { label: '指导教师', value: data.value?.teachers_total ?? 0, unit: '人', note: '在岗账号', icon: UserFilled, tone: 'gold' },
   { label: '进行中', value: data.value?.in_progress ?? 0, unit: '人', note: '尚未归档', icon: TrendCharts, tone: 'teal' },
   { label: '已归档', value: data.value?.archived ?? 0, unit: '人', note: '完成全流程', icon: Finished, tone: 'muted' },
+  { label: '材料总数', value: data.value?.materials_total ?? 0, unit: '份', note: '含历史版本', icon: FolderOpened, tone: 'ink' },
 ])
 
 const roleLabel: Record<string, string> = { ADMIN: '管理员', TEACHER: '教师', STUDENT: '学生' }
@@ -238,6 +239,7 @@ onMounted(load)
 .tone-gold::before { background: var(--th-accent); }
 .tone-teal::before { background: #3b6b63; }
 .tone-muted::before { background: #9a9384; }
+.tone-ink::before { background: #4a6173; }
 
 .metric-head {
   display: flex;

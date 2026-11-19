@@ -19,11 +19,13 @@ const nav = computed(() => {
     return [
       { to: '/', title: '工作台', exact: true },
       { to: '/my-students', title: '我的学生' },
+      { to: '/materials', title: '学生材料' },
     ]
   }
   return [
     { to: '/', title: '工作台', exact: true },
     { to: '/profile', title: '我的档案' },
+    { to: '/my-materials', title: '材料提交' },
   ]
 })
 

@@ -13,6 +13,7 @@ from app.api.deps import DBDep, require_role
 from app.core.response import ApiResponse, ok
 from app.models.audit_log import AuditLog
 from app.models.enums import AI_STAGES, STAGE_LABELS, STAGE_ORDER, Role, StudentStatus
+from app.models.material import Material
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.stats import OverviewOut, RecentLogin, StageCount
@@ -31,6 +32,7 @@ async def overview(db: DBDep, _: AdminUser) -> ApiResponse[OverviewOut]:
     teachers_total = await db.scalar(
         select(func.count()).select_from(User).where(User.role == Role.TEACHER.value, User.is_active.is_(True))
     ) or 0
+    materials_total = await db.scalar(select(func.count()).select_from(Material)) or 0
 
     stage_rows = await db.execute(select(Student.current_stage, func.count()).group_by(Student.current_stage))
     stage_counts = {stage: count for stage, count in stage_rows.all()}
@@ -69,6 +71,7 @@ async def overview(db: DBDep, _: AdminUser) -> ApiResponse[OverviewOut]:
             teachers_total=teachers_total,
             in_progress=students_total - archived,
             archived=archived,
+            materials_total=materials_total,
             stages=stages,
             recent_logins=recent_logins,
         )

@@ -38,6 +38,18 @@ const router = createRouter({
           component: () => import('@/views/StudentProfileView.vue'),
           meta: { title: '我的档案', roles: ['STUDENT'] },
         },
+        {
+          path: 'materials',
+          name: 'teacher-materials',
+          component: () => import('@/views/MaterialsView.vue'),
+          meta: { title: '学生材料', roles: ['TEACHER'] },
+        },
+        {
+          path: 'my-materials',
+          name: 'student-materials',
+          component: () => import('@/views/StudentMaterialsView.vue'),
+          meta: { title: '材料提交', roles: ['STUDENT'] },
+        },
       ],
     },
     {
@@ -56,6 +68,12 @@ const router = createRouter({
           name: 'admin-students',
           component: () => import('@/views/StudentsView.vue'),
           meta: { title: '学生与课题' },
+        },
+        {
+          path: 'materials',
+          name: 'admin-materials',
+          component: () => import('@/views/MaterialsView.vue'),
+          meta: { title: '材料中心' },
         },
       ],
     },
