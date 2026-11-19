@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, genFileId, type UploadFile, type UploadInstance, type UploadRawFile } from 'element-plus'
 import { Download, UploadFilled } from '@element-plus/icons-vue'
 
+import ReminderBanner from '@/components/ReminderBanner.vue'
 import { materialsApi, type Material } from '@/api/materials'
 import { studentsApi } from '@/api/students'
 import { STAGES } from '@/constants/stages'
@@ -127,6 +128,8 @@ onMounted(async () => {
       </div>
       <span class="count">已提交 <b>{{ total }}</b> 份</span>
     </header>
+
+    <ReminderBanner />
 
     <section class="panel upload-panel">
       <div class="panel-title">

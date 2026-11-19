@@ -952,9 +952,9 @@ onMounted(loadAll)
 }
 
 .opinion.is-approve {
-  color: var(--th-primary);
-  background: rgba(29, 51, 84, 0.06);
-  border: 1px solid var(--th-border-soft);
+  color: #2f6b4f;
+  background: rgba(47, 107, 79, 0.08);
+  border: 1px solid rgba(47, 107, 79, 0.25);
 }
 
 :deep(.el-table th.el-table__cell) {

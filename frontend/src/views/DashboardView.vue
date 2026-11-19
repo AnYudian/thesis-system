@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import ReminderBanner from '@/components/ReminderBanner.vue'
 import { reviewsApi, type PendingItem } from '@/api/reviews'
 import { studentsApi, type Student } from '@/api/students'
 import { STAGES } from '@/constants/stages'
@@ -228,6 +229,7 @@ onMounted(async () => {
 
   <!-- 学生工作台保持轻量：只说明流程和自己的入口 -->
   <div v-else class="page">
+    <ReminderBanner />
     <section class="hero hero--plain">
       <p class="eyebrow">2026 届 · 毕业论文（设计）全过程</p>
       <h2>{{ auth.displayName }}，欢迎回来</h2>

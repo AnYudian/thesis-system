@@ -50,11 +50,20 @@ async function submit() {
   submitting.value = true
   try {
     const result = await reviewsApi.decide(props.target.student_id, props.action, comment.value)
-    ElMessage.success(
-      result.status === 'ARCHIVED'
-        ? '已通过，九个环节全部完成，学生进入归档'
-        : `已通过，进入「${stageLabel(result.current_stage)}」`,
-    )
+    // 退回和通过必须给不同的反馈：退回后学生还在原环节，
+    // 之前一律写"已通过，进入下一环节"会让人以为点错了按钮
+    if (props.action === 'RETURN') {
+      ElMessage({
+        type: 'warning',
+        message: `已退回，${props.target.name} 仍停留在「${stageLabel(result.current_stage)}」，等学生修改后重新提交`,
+      })
+    } else {
+      ElMessage.success(
+        result.status === 'ARCHIVED'
+          ? '已通过，九个环节全部完成，学生进入归档'
+          : `已通过，进入「${stageLabel(result.current_stage)}」`,
+      )
+    }
     emit('update:modelValue', false)
     emit('done')
   } catch {

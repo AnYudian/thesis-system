@@ -52,6 +52,8 @@ class PendingItem(BaseModel):
     # 当前环节的指导记录数；中期检查要求满 10 次才允许通过
     guidance_count: int = 0
     guidance_required: int = 0
+    # 最近一次催交时间：列表里提示"什么时候催过"，避免老师隔天重复催
+    last_reminded_at: datetime | None = None
 
 
 class ReviewResult(BaseModel):

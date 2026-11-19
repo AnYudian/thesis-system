@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
 import ReviewDecisionDialog from '@/components/ReviewDecisionDialog.vue'
+import { remindersApi } from '@/api/reminders'
 import { reviewsApi, type PendingItem, type ReviewAction, type ReviewTarget } from '@/api/reviews'
 import { teachersApi } from '@/api/students'
 import { STAGES } from '@/constants/stages'
@@ -65,6 +67,65 @@ function openDetail(studentId: number) {
       ? { path: `/admin/students/${studentId}`, query: { from: 'reviews' } }
       : { path: `/students/${studentId}`, query: { from: 'reviews' } },
   )
+}
+
+// 需要催交的两种情况：本环节一份都没交，或者被退回后还没重交。
+// 已经交了待审的人不催，避免老师催到正在等着被看的人头上。
+function needsMaterial(row: PendingItem) {
+  if (!row.material_count) return true
+  if (row.last_action !== 'RETURN') return false
+  if (!row.latest_material_at) return true
+  return new Date(row.latest_material_at).getTime() <= new Date(row.last_reviewed_at ?? 0).getTime()
+}
+
+const needRemindRows = computed(() => displayItems.value.filter(needsMaterial))
+
+async function remindOne(row: PendingItem) {
+  const stage = stageLabel(row.stage)
+  let content = ''
+  try {
+    const res = await ElMessageBox.prompt(`给 ${row.name}（${row.sno}）发一条催交提醒`, `催交材料 · ${stage}`, {
+      inputValue: `请在「${stage}」环节尽快提交材料，有疑问随时联系我。`,
+      inputType: 'textarea',
+      inputPlaceholder: '学生下次登录工作台或材料页时能看到这条提醒',
+      confirmButtonText: '发送提醒',
+      cancelButtonText: '取消',
+      inputValidator: (value: string) => (value && value.trim() ? true : '提醒内容不能为空'),
+    })
+    content = res.value
+  } catch {
+    return // 取消
+  }
+  await remindersApi.remind(row.student_id, content)
+  ElMessage.success(`已提醒 ${row.name}`)
+  await load()
+}
+
+// 批量只按当前列表（含筛选）来，老师筛出某个环节后一键催的就是这一环
+async function remindAll() {
+  const rows = needRemindRows.value
+  if (!rows.length) return
+  try {
+    await ElMessageBox.confirm(
+      `给 ${rows.length} 名未交（或退回后未重交）材料的学生各发一条提醒？提醒内容按各自环节自动生成。`,
+      '批量催交',
+      { confirmButtonText: '全部发送', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  let done = 0
+  for (const row of rows) {
+    try {
+      await remindersApi.remind(row.student_id)
+      done += 1
+    } catch {
+      // 单个失败（比如刚被归档）不打断其余学生，最后统一报数量
+    }
+  }
+  ElMessage.success(`已提醒 ${done} 名学生`)
+  await load()
 }
 
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
@@ -184,6 +245,15 @@ watch(
       <el-checkbox v-if="!isAdmin" v-model="onlyTodo" class="tool-check">只看待审核</el-checkbox>
       <el-button :icon="Search" @click="search">查询</el-button>
       <el-button :icon="Refresh" plain @click="reset">重置</el-button>
+      <el-button
+        v-if="!isAdmin"
+        type="warning"
+        plain
+        :disabled="!needRemindRows.length"
+        @click="remindAll"
+      >
+        催交未交材料<template v-if="needRemindRows.length">（{{ needRemindRows.length }}）</template>
+      </el-button>
     </section>
 
     <section class="table-wrap">
@@ -203,6 +273,7 @@ watch(
               {{ row.sno }}
               <em v-if="isNewSubmission(row)" class="todo-tag">待审核</em>
               <em v-else-if="!row.material_count" class="muted-tag">未交材料</em>
+              <em v-else-if="row.last_action === 'RETURN' && needsMaterial(row)" class="muted-tag">待重交</em>
             </span>
           </template>
         </el-table-column>
@@ -225,13 +296,26 @@ watch(
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="材料" width="118">
+        <el-table-column label="材料" width="136">
           <template #default="{ row }">
             <template v-if="row.material_count">
               <span class="cell-main">{{ row.material_count }} 份 · v{{ row.latest_version }}</span>
               <span class="cell-sub">{{ formatTime(row.latest_material_at) }}</span>
             </template>
             <span v-else class="cell-sub">暂无材料</span>
+            <span v-if="row.last_reminded_at" class="remind-note">
+              已催交 {{ formatTime(row.last_reminded_at) }}
+            </span>
+            <el-button
+              v-if="!isAdmin && needsMaterial(row)"
+              link
+              type="warning"
+              size="small"
+              class="remind-btn"
+              @click="remindOne(row)"
+            >
+              {{ row.last_reminded_at ? '再催一次' : '催交' }}
+            </el-button>
           </template>
         </el-table-column>
         <el-table-column label="指导记录" width="118">
@@ -514,9 +598,9 @@ watch(
 }
 
 .opinion.is-approve {
-  color: var(--th-primary);
-  background: rgba(29, 51, 84, 0.06);
-  border: 1px solid var(--th-border-soft);
+  color: #2f6b4f;
+  background: rgba(47, 107, 79, 0.08);
+  border: 1px solid rgba(47, 107, 79, 0.25);
 }
 
 .opinion-text {
@@ -527,6 +611,21 @@ watch(
   color: var(--th-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 催交是辅助动作：字号小一号、金色，避免和「通过 / 退回」抢注意力 */
+.remind-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #a29a8b;
+}
+
+.remind-btn {
+  padding: 0;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #8a6a25;
 }
 
 .empty {

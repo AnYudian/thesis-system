@@ -14,6 +14,7 @@ from app.api.guidance import router as guidance_router
 from app.api.health import router as health_router
 from app.api.logs import router as logs_router
 from app.api.materials import router as materials_router
+from app.api.reminders import router as reminders_router
 from app.api.reviews import router as reviews_router
 from app.api.stats import router as stats_router
 from app.api.students import router as students_router
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(materials_router, prefix="/api")
     app.include_router(reviews_router, prefix="/api")
     app.include_router(guidance_router, prefix="/api")
+    app.include_router(reminders_router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
     async def index() -> ApiResponse:

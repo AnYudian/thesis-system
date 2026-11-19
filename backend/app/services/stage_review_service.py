@@ -16,6 +16,7 @@ from app.models.audit_log import AuditLog
 from app.models.enums import STAGE_NEXT, STAGE_ORDER, ReviewAction, Stage, StudentStatus
 from app.models.guidance import GuidanceRecord
 from app.models.material import Material
+from app.models.reminder import Reminder
 from app.models.stage_review import StageReview
 from app.models.student import Student
 from app.models.user import User
@@ -269,6 +270,16 @@ async def pending(
         key = (review.student_id, review.stage)
         last_review.setdefault(key, review)
 
+    # 最近催交时间：教师列表据此显示"已催交"，也方便判断要不要再催
+    reminder_rows = (
+        await db.execute(
+            select(Reminder.student_id, func.max(Reminder.created_at))
+            .where(Reminder.student_id.in_(ids))
+            .group_by(Reminder.student_id)
+        )
+    ).all()
+    last_reminded = dict(reminder_rows)
+
     items: list[PendingItem] = []
     for student in students:
         count, last_at, version = material_stats.get(
@@ -294,6 +305,7 @@ async def pending(
                 guidance_required=(
                     MIDTERM_REQUIRED if student.current_stage == Stage.MIDTERM.value else 0
                 ),
+                last_reminded_at=last_reminded.get(student.id),
             )
         )
 
