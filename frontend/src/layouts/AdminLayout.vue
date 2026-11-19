@@ -7,6 +7,7 @@ import {
   FolderOpened,
   Setting,
   Stamp,
+  TrendCharts,
   SwitchButton,
   User,
 } from '@element-plus/icons-vue'
@@ -20,10 +21,11 @@ const router = useRouter()
 // 已建成的只有概览；其余按分期占位，避免做出“点了没反应”的假菜单
 const menu = [
   { title: '数据概览', icon: DataBoard, to: '/admin', ready: true },
+  { title: '统计报表', icon: TrendCharts, to: '/admin/report', ready: true },
   { title: '学生与课题', icon: User, to: '/admin/students', ready: true },
   { title: '材料中心', icon: FolderOpened, to: '/admin/materials', ready: true },
   { title: '阶段流转', icon: Stamp, to: '/admin/reviews', ready: true },
-  { title: '账号管理', icon: Setting, tag: 'P4', ready: false },
+  { title: '账号管理', icon: Setting, tag: '后续', ready: false },
 ]
 
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? '管理控制台')

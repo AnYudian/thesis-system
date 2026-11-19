@@ -70,6 +70,12 @@ const router = createRouter({
           meta: { title: '数据概览' },
         },
         {
+          path: 'report',
+          name: 'admin-report',
+          component: () => import('@/views/admin/ReportView.vue'),
+          meta: { title: '统计报表' },
+        },
+        {
           path: 'students',
           name: 'admin-students',
           component: () => import('@/views/StudentsView.vue'),

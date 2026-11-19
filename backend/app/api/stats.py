@@ -6,7 +6,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 
 from app.api.deps import DBDep, require_role
@@ -16,7 +16,8 @@ from app.models.enums import AI_STAGES, STAGE_LABELS, STAGE_ORDER, Role, Student
 from app.models.material import Material
 from app.models.student import Student
 from app.models.user import User
-from app.schemas.stats import OverviewOut, RecentLogin, StageCount
+from app.schemas.stats import OverviewOut, RecentLogin, ReportOut, StageCount
+from app.services import report_service
 
 router = APIRouter(prefix="/stats", tags=["统计"])
 
@@ -76,3 +77,13 @@ async def overview(db: DBDep, _: AdminUser) -> ApiResponse[OverviewOut]:
             recent_logins=recent_logins,
         )
     )
+
+
+@router.get("/report", response_model=ApiResponse[ReportOut], summary="统计报表（仅管理员）")
+async def report(
+    db: DBDep,
+    _: AdminUser,
+    days: Annotated[int, Query(ge=7, le=90, description="动态图统计最近多少天")] = 14,
+) -> ApiResponse[ReportOut]:
+    # 报表全量返回，不分页：九环节 + 教师人数都是几十行级别，一次给前端更省事
+    return ok(await report_service.build_report(db, days=days))
