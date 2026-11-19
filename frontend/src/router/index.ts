@@ -51,6 +51,13 @@ const router = createRouter({
           meta: { title: '阶段审核', roles: ['TEACHER'] },
         },
         {
+          // 教师查看名下学生详情：复用管理员那套详情页，权限仍由后端按导师校验
+          path: 'students/:id(\\d+)',
+          name: 'teacher-student-detail',
+          component: () => import('@/views/admin/StudentDetailView.vue'),
+          meta: { title: '学生详情', roles: ['TEACHER'] },
+        },
+        {
           path: 'guidance',
           name: 'teacher-guidance',
           component: () => import('@/views/GuidanceView.vue'),

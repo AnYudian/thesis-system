@@ -34,6 +34,8 @@ const nav = computed(() => {
 })
 
 function isActive(to: string, exact?: boolean) {
+  // 学生详情是从阶段审核点进去的，导航仍停在「阶段审核」才找得到来路
+  if (to === '/reviews' && /^\/students\/\d+$/.test(route.path)) return true
   return exact ? route.path === to : route.path.startsWith(to)
 }
 

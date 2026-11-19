@@ -58,6 +58,14 @@ export interface ReviewQuery {
   teacher_id?: number
 }
 
+/** 通过/退回弹窗需要的目标信息，列表和详情页共用 */
+export interface ReviewTarget {
+  student_id: number
+  name: string
+  sno: string
+  stage: string
+}
+
 export interface PendingQuery {
   stage?: string
   keyword?: string

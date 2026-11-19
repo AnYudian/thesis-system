@@ -3,20 +3,33 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Download } from '@element-plus/icons-vue'
 
+import ReviewDecisionDialog from '@/components/ReviewDecisionDialog.vue'
 import { METHOD_LABELS, guidanceApi, type GuidanceRecord, type GuidanceSummary } from '@/api/guidance'
 import { materialsApi, type Material } from '@/api/materials'
-import { reviewsApi, type StageReview } from '@/api/reviews'
+import { reviewsApi, type ReviewAction, type ReviewTarget, type StageReview } from '@/api/reviews'
 import { studentsApi, type StudentDetail } from '@/api/students'
 import { STAGES } from '@/constants/stages'
+import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 
+const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const studentId = Number(route.params.id)
+const isTeacher = computed(() => auth.role === 'TEACHER')
 
-// 同一个详情页从两个入口进来：侧栏高亮和返回文案都跟着来源走
+// 同一个详情页有三种来路：教师从阶段审核进、管理员从阶段流转或学生列表进。
+// 返回地址和文案必须跟来路一致，否则老师会莫名其妙回到别处。
 const fromReviews = computed(() => route.query.from === 'reviews')
+const backLabel = computed(() =>
+  isTeacher.value ? '返回阶段审核' : fromReviews.value ? '返回阶段流转' : '返回学生与课题',
+)
+
 function goBack() {
+  if (isTeacher.value) {
+    router.push('/reviews')
+    return
+  }
   router.push(fromReviews.value ? '/admin/reviews' : '/admin/students')
 }
 
@@ -92,8 +105,37 @@ function fileSize(bytes: number | null) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-onMounted(async () => {
+// 教师在这个页面直接放行/退回，处理完要重新拉一遍：
+// 环节、审核历史、指导次数都会变，不能只改本地状态
+const decideVisible = ref(false)
+const decideAction = ref<ReviewAction>('APPROVE')
+const decideTarget = ref<ReviewTarget | null>(null)
+
+// 中期检查没满 10 次时不允许通过；退回不拦，材料不合格时老师要能直接退
+const approveBlocked = computed(() => {
+  const d = detail.value
+  if (!d || d.current_stage !== 'MIDTERM') return false
+  return !!summary.value && summary.value.midterm_count < summary.value.midterm_required
+})
+
+function openDecide(action: ReviewAction) {
+  const d = detail.value
+  if (!d) return
+  decideTarget.value = { student_id: d.id, name: d.name, sno: d.sno, stage: d.current_stage }
+  decideAction.value = action
+  decideVisible.value = true
+}
+
+function clearEvidenceUrls() {
+  Object.values(evidenceUrls).forEach((url) => URL.revokeObjectURL(url))
+  Object.keys(evidenceUrls).forEach((key) => delete evidenceUrls[Number(key)])
+  evidenceLoaded.value = false
+}
+
+async function loadAll() {
+  loading.value = true
   try {
+    clearEvidenceUrls()
     detail.value = await studentsApi.detail(studentId)
     const [reviewPage, materialPage, guidancePage, guidanceSummary] = await Promise.all([
       reviewsApi.list({ student_id: studentId, size: 100 }),
@@ -109,15 +151,15 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(loadAll)
 </script>
 
 <template>
   <div v-loading="loading" class="page">
     <div class="crumb">
-      <el-button link :icon="ArrowLeft" @click="goBack">
-        {{ fromReviews ? '返回阶段流转' : '返回学生与课题' }}
-      </el-button>
+      <el-button link :icon="ArrowLeft" @click="goBack">{{ backLabel }}</el-button>
       <span class="crumb-sep">/</span>
       <span>学生详情</span>
     </div>
@@ -155,7 +197,7 @@ onMounted(async () => {
       <section class="panel teacher-panel">
         <header class="panel-head">
           <h3>指导教师</h3>
-          <p>管理员核对指导记录时，需要能直接联系到导师</p>
+          <p>{{ isTeacher ? '学生和管理员需要时，可按这里的信息联系你' : '管理员核对指导记录时，需要能直接联系到导师' }}</p>
         </header>
         <div v-if="detail.teacher" class="teacher-grid">
           <div>
@@ -194,6 +236,37 @@ onMounted(async () => {
             <span class="step-name" :title="s.label">{{ s.short }}</span>
           </li>
         </ol>
+      </section>
+
+      <section v-if="isTeacher && detail.status !== 'ARCHIVED'" class="panel action-panel">
+        <header class="panel-head">
+          <h3>本环节审核</h3>
+          <p>
+            当前：{{ stageLabel(detail.current_stage) }} · 材料 {{ materials.length }} 份 ·
+            指导 {{ guidanceStats.total }} 次；看完下方材料与历史后再决定
+          </p>
+        </header>
+        <div class="action-row">
+          <p v-if="approveBlocked" class="action-warn">
+            中期检查要求指导记录满 {{ summary?.midterm_required ?? 10 }} 次，当前只有
+            {{ summary?.midterm_count ?? 0 }} 次，先补齐再通过；也可以直接退回让学生完善。
+          </p>
+          <p v-else class="action-hint">通过后学生进入下一环节；退回必须写明要改的地方。</p>
+          <div class="action-btns">
+            <el-tooltip
+              :disabled="!approveBlocked"
+              content="中期检查要求指导记录满 10 次，请先在「指导记录」补齐"
+              placement="top"
+            >
+              <span>
+                <el-button type="primary" :disabled="approveBlocked" @click="openDecide('APPROVE')">
+                  通过本环节
+                </el-button>
+              </span>
+            </el-tooltip>
+            <el-button type="danger" plain @click="openDecide('RETURN')">退回修改</el-button>
+          </div>
+        </div>
       </section>
 
       <section class="panel">
@@ -327,6 +400,13 @@ onMounted(async () => {
         <p v-else class="empty">还没有审核记录。</p>
       </section>
     </template>
+
+    <ReviewDecisionDialog
+      v-model="decideVisible"
+      :action="decideAction"
+      :target="decideTarget"
+      @done="loadAll"
+    />
   </div>
 </template>
 
@@ -453,6 +533,32 @@ onMounted(async () => {
 
 .panel-head b {
   color: var(--th-primary);
+}
+
+/* 教师看完材料/记录后就在这里决定，不用返回列表再找同一行 */
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.action-hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+}
+
+.action-warn {
+  margin: 0;
+  font-size: 12.5px;
+  color: #a33a2a;
+}
+
+.action-btns {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
 }
 
 .teacher-grid {

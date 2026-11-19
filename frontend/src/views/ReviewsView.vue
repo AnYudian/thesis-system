@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
-import { reviewsApi, type PendingItem, type ReviewAction } from '@/api/reviews'
+import ReviewDecisionDialog from '@/components/ReviewDecisionDialog.vue'
+import { reviewsApi, type PendingItem, type ReviewAction, type ReviewTarget } from '@/api/reviews'
 import { teachersApi } from '@/api/students'
-import { STAGES, STAGE_SHORT } from '@/constants/stages'
+import { STAGES } from '@/constants/stages'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 
@@ -28,6 +28,30 @@ const query = reactive({
 
 const teachers = ref<{ id: number; real_name: string | null; username: string }[]>([])
 
+// “待审核”= 当前环节交过材料，且材料比最近一次审核新（或从来没审过）。
+// 退回后学生重新上传也算新提交，不会因为“处理过一次”就被埋掉。
+function isNewSubmission(row: PendingItem) {
+  if (!row.material_count || !row.latest_material_at) return false
+  if (!row.last_reviewed_at) return true
+  return new Date(row.latest_material_at).getTime() > new Date(row.last_reviewed_at).getTime()
+}
+
+const todoCount = computed(() => items.value.filter(isNewSubmission).length)
+const onlyTodo = ref(false)
+
+// 教师的工作顺序：先处理有新提交的，再按流程顺序往下排，
+// 这样打开页面第一屏就是该动手的人，不用逐条点开猜。
+const displayItems = computed(() => {
+  const rows = onlyTodo.value ? items.value.filter(isNewSubmission) : items.value
+  return [...rows].sort((a, b) => {
+    const an = isNewSubmission(a) ? 0 : 1
+    const bn = isNewSubmission(b) ? 0 : 1
+    if (an !== bn) return an - bn
+    const order = stageIndex(a.stage) - stageIndex(b.stage)
+    return order !== 0 ? order : a.sno.localeCompare(b.sno)
+  })
+})
+
 // 中期检查先看指导次数：不够 10 次时把「通过」按钮直接禁掉，
 // 后端也会再拦一次，这里只是让老师少点一次、提前知道差在哪
 function canApprove(row: PendingItem) {
@@ -35,8 +59,12 @@ function canApprove(row: PendingItem) {
 }
 
 function openDetail(studentId: number) {
-  // from=reviews 让详情页的侧栏仍停在「阶段流转」，返回也回到这张表
-  router.push({ path: `/admin/students/${studentId}`, query: { from: 'reviews' } })
+  // 教师和学生详情在同一个路由族里，但从阶段审核点进去要能原路返回
+  router.push(
+    isAdmin.value
+      ? { path: `/admin/students/${studentId}`, query: { from: 'reviews' } }
+      : { path: `/students/${studentId}`, query: { from: 'reviews' } },
+  )
 }
 
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
@@ -63,48 +91,28 @@ function reset() {
   query.keyword = ''
   query.stage = ''
   query.teacherId = undefined
+  onlyTodo.value = false
   load()
 }
 
-// 一个弹窗复用“通过 / 退回”两种情况：字段一样，只是意见是否必填不同
-const dialog = reactive({
-  visible: false,
-  action: 'APPROVE' as ReviewAction,
-  row: null as PendingItem | null,
-  comment: '',
-  submitting: false,
-})
+// 通过/退回弹窗与详情页共用组件，这里只负责把行的信息递过去
+const decideVisible = ref(false)
+const decideAction = ref<ReviewAction>('APPROVE')
+const decideTarget = ref<ReviewTarget | null>(null)
 
 function open(row: PendingItem, action: ReviewAction) {
-  dialog.row = row
-  dialog.action = action
-  dialog.comment = ''
-  dialog.visible = true
+  decideTarget.value = {
+    student_id: row.student_id,
+    name: row.name,
+    sno: row.sno,
+    stage: row.stage,
+  }
+  decideAction.value = action
+  decideVisible.value = true
 }
 
-async function submit() {
-  if (!dialog.row) return
-  if (dialog.action === 'RETURN' && !dialog.comment.trim()) {
-    ElMessage.warning('退回必须填写原因，学生要知道改什么')
-    return
-  }
-
-  dialog.submitting = true
-  try {
-    const result = await reviewsApi.decide(dialog.row.student_id, dialog.action, dialog.comment)
-    ElMessage.success(
-      result.status === 'ARCHIVED'
-        ? '已通过，九个环节全部完成，学生进入归档'
-        : `已通过，进入「${stageLabel(result.current_stage)}」`,
-    )
-    dialog.visible = false
-    // 刚处理完的这一行要么换环节、要么归档，直接重拉保持表格与库里一致
-    await load()
-  } catch {
-    // 拦截器已经弹过具体原因（比如状态已变化），这里保持弹窗打开让老师重试
-  } finally {
-    dialog.submitting = false
-  }
+function rowClass({ row }: { row: PendingItem }) {
+  return isNewSubmission(row) ? 'row-todo' : ''
 }
 
 // 教师工作台的环节卡片会带 ?stage= 过来，落地时直接筛好这一环；
@@ -140,12 +148,13 @@ watch(
         <p class="sub">
           {{ isAdmin
             ? '全校在途学生的当前进度、材料、指导与上次流转都在这一页；点姓名或「详情」可追溯完整历史。放行由指导教师本人决定，管理员只读。'
-            : '学生完成当前环节后由你放行或退回。通过进入下一环节，退回必须写明要改的地方。' }}
+            : '先处理标了「待审核」的学生：打开详情核对材料、指导记录和审核历史，再决定通过或退回。退回必须写明要改的地方。' }}
         </p>
       </div>
       <span class="count">
         {{ isAdmin ? '在途' : '待处理' }}
         <b>{{ items.length }}</b> 人
+        <template v-if="!isAdmin"> · 待审核 <b class="count-todo">{{ todoCount }}</b> 份</template>
       </span>
     </header>
 
@@ -172,19 +181,29 @@ watch(
       >
         <el-option v-for="t in teachers" :key="t.id" :label="t.real_name || t.username" :value="t.id" />
       </el-select>
+      <el-checkbox v-if="!isAdmin" v-model="onlyTodo" class="tool-check">只看待审核</el-checkbox>
       <el-button :icon="Search" @click="search">查询</el-button>
       <el-button :icon="Refresh" plain @click="reset">重置</el-button>
     </section>
 
     <section class="table-wrap">
-      <el-table v-loading="loading" :data="items" stripe row-key="student_id">
-        <el-table-column label="学生" width="120">
+      <el-table
+        v-loading="loading"
+        :data="displayItems"
+        stripe
+        row-key="student_id"
+        :row-class-name="rowClass"
+      >
+        <el-table-column label="学生" width="132">
           <template #default="{ row }">
-            <el-button v-if="isAdmin" link type="primary" class="name-link" @click="openDetail(row.student_id)">
+            <el-button link type="primary" class="name-link" @click="openDetail(row.student_id)">
               {{ row.name }}
             </el-button>
-            <span v-else class="cell-main">{{ row.name }}</span>
-            <span class="cell-sub">{{ row.sno }}</span>
+            <span class="cell-sub student-sub">
+              {{ row.sno }}
+              <em v-if="isNewSubmission(row)" class="todo-tag">待审核</em>
+              <em v-else-if="!row.material_count" class="muted-tag">未交材料</em>
+            </span>
           </template>
         </el-table-column>
         <el-table-column v-if="isAdmin" label="指导教师" width="100">
@@ -242,8 +261,9 @@ watch(
             <span v-else class="cell-sub">本环节还没有审核记录</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isAdmin" label="操作" width="128" fixed="right">
+        <el-table-column v-if="!isAdmin" label="操作" width="168" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openDetail(row.student_id)">详情</el-button>
             <el-tooltip
               :disabled="canApprove(row)"
               content="中期检查要求指导记录满 10 次，请先在「指导记录」补齐"
@@ -264,57 +284,24 @@ watch(
           </template>
         </el-table-column>
         <template #empty>
-          <p class="empty">没有符合条件的学生。</p>
+          <p class="empty">{{ onlyTodo ? '当前没有待审核的提交。' : '没有符合条件的学生。' }}</p>
         </template>
       </el-table>
 
       <div class="legend">
         <el-button :icon="Refresh" plain size="small" @click="load">刷新</el-button>
-        <span class="legend-text">共 {{ STAGES.length }} 个环节，最后一环通过后自动归档；审核历史与指导明细在「详情」里。</span>
+        <span class="legend-text">
+          共 {{ STAGES.length }} 个环节，最后一环通过后自动归档；审核历史与指导明细在「详情」里。
+        </span>
       </div>
     </section>
 
-    <el-dialog
-      v-model="dialog.visible"
-      :title="dialog.action === 'APPROVE' ? '通过本环节' : '退回修改'"
-      width="460px"
-      :close-on-click-modal="false"
-    >
-      <template v-if="dialog.row">
-        <p class="dlg-who">
-          <b>{{ dialog.row.name }}</b>
-          <span class="dlg-sno">{{ dialog.row.sno }}</span>
-        </p>
-        <p class="dlg-stage">
-          {{ stageLabel(dialog.row.stage) }}
-          <span v-if="dialog.action === 'APPROVE'" class="dlg-arrow">
-            → {{ stageIndex(dialog.row.stage) === STAGES.length ? '归档' : STAGE_SHORT[STAGES[stageIndex(dialog.row.stage)].code] }}
-          </span>
-        </p>
-        <el-input
-          v-model="dialog.comment"
-          type="textarea"
-          :rows="4"
-          maxlength="500"
-          show-word-limit
-          :placeholder="
-            dialog.action === 'APPROVE'
-              ? '可选：写一句给学生的确认意见（如“选题方向明确，可以进入任务书阶段”）'
-              : '必填：写清楚哪里不通过、需要补什么，学生照着改'
-          "
-        />
-      </template>
-      <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button
-          :type="dialog.action === 'APPROVE' ? 'primary' : 'danger'"
-          :loading="dialog.submitting"
-          @click="submit"
-        >
-          {{ dialog.action === 'APPROVE' ? '确认通过' : '确认退回' }}
-        </el-button>
-      </template>
-    </el-dialog>
+    <ReviewDecisionDialog
+      v-model="decideVisible"
+      :action="decideAction"
+      :target="decideTarget"
+      @done="load"
+    />
   </div>
 </template>
 
@@ -375,6 +362,10 @@ watch(
   color: var(--th-primary);
 }
 
+.count .count-todo {
+  color: #8a5a1c;
+}
+
 .table-wrap {
   padding: 6px 14px 14px;
   background: var(--th-surface);
@@ -402,6 +393,10 @@ watch(
   width: 160px;
 }
 
+.tool-check {
+  margin-right: 2px;
+}
+
 .cell-main {
   display: block;
   font-size: 13px;
@@ -417,6 +412,34 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.student-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.todo-tag,
+.muted-tag {
+  padding: 0 5px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 16px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.todo-tag {
+  color: #8a5a1c;
+  background: rgba(198, 168, 107, 0.18);
+  border: 1px solid rgba(198, 168, 107, 0.5);
+}
+
+.muted-tag {
+  color: #9b958a;
+  background: rgba(29, 51, 84, 0.04);
+  border: 1px solid var(--th-border-soft);
 }
 
 .cell-main.is-short {
@@ -525,26 +548,9 @@ watch(
   color: var(--th-text-muted);
 }
 
-.dlg-who {
-  margin: 0;
-  font-size: 15px;
-  color: var(--th-primary-deep);
-}
-
-.dlg-sno {
-  margin-left: 8px;
-  font-size: 12px;
-  color: var(--th-text-muted);
-}
-
-.dlg-stage {
-  margin: 6px 0 14px;
-  font-size: 12.5px;
-  color: var(--th-text-muted);
-}
-
-.dlg-arrow {
-  color: var(--th-accent);
+/* 有新提交的行轻轻铺一层暖色，横向扫视时能一眼挑出来 */
+:deep(.el-table__body tr.row-todo > td.el-table__cell) {
+  background: rgba(198, 168, 107, 0.08);
 }
 
 :deep(.el-table th.el-table__cell) {
