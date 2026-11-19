@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 
-import { studentsApi, teachersApi, type Student, type StudentForm } from '@/api/students'
+import {
+  studentsApi,
+  teachersApi,
+  type ImportResult,
+  type Student,
+  type StudentForm,
+} from '@/api/students'
 import { STAGES } from '@/constants/stages'
 import { useAuthStore } from '@/stores/auth'
 
@@ -251,6 +257,44 @@ async function removeStudent(row: Student) {
   await load()
 }
 
+// ---- 批量导入 ----
+const importVisible = ref(false)
+const importing = ref(false)
+const importText = ref('')
+const importAccount = ref(true)
+const importResult = ref<ImportResult | null>(null)
+
+const IMPORT_SAMPLE =
+  '20221201,张三,软件工程,软工2201,2022,teacher\n' +
+  '20221202,李四,软件工程,软工2201,2022\n'
+
+function openImport() {
+  importText.value = ''
+  importAccount.value = true
+  importResult.value = null
+  importVisible.value = true
+}
+
+async function submitImport() {
+  if (!importText.value.trim()) {
+    ElMessage.warning('请先粘贴名单')
+    return
+  }
+  importing.value = true
+  try {
+    importResult.value = await studentsApi.importCsv(importText.value, importAccount.value)
+    const res = importResult.value
+    if (res.created) {
+      ElMessage.success(`已导入 ${res.created} 人${res.skipped ? `，跳过 ${res.skipped} 行` : ''}`)
+      await load()
+    } else {
+      ElMessage.warning('没有导入任何学生，请检查下方错误原因')
+    }
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(async () => {
   await load()
   if (isAdmin.value) {
@@ -271,7 +315,10 @@ onMounted(async () => {
             : '这里只显示你名下的学生，课题由你或管理员录入。' }}
         </p>
       </div>
-      <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openCreate">新建学生</el-button>
+      <div v-if="isAdmin" class="head-actions">
+        <el-button :icon="Upload" @click="openImport">批量导入</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">新建学生</el-button>
+      </div>
     </header>
 
     <section class="toolbar">
@@ -351,6 +398,9 @@ onMounted(async () => {
             </template>
           </template>
         </el-table-column>
+        <template #empty>
+          <p class="empty">没有匹配的学生。可以点右上角「新建学生」或「批量导入」。</p>
+        </template>
       </el-table>
 
       <div class="pager">
@@ -413,6 +463,44 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
+    <!-- 批量导入 -->
+    <el-dialog v-model="importVisible" title="批量导入学生" width="660px" destroy-on-close>
+      <p class="import-tip">
+        一行一个学生，列顺序固定为
+        <b>学号, 姓名, 专业, 班级, 年级, 指导教师账号（可选）</b>。表头行可留可删；从 Excel 直接复制（制表符）也能识别。
+      </p>
+      <el-input
+        v-model="importText"
+        type="textarea"
+        :rows="8"
+        :placeholder="IMPORT_SAMPLE"
+        class="import-input"
+      />
+      <el-checkbox v-model="importAccount" class="import-check">
+        同时开通学生账号（账号=学号，初始密码 123456）
+      </el-checkbox>
+
+      <template v-if="importResult">
+        <div class="import-summary" :class="{ 'has-error': importResult.skipped }">
+          成功 <b>{{ importResult.created }}</b> 人
+          <span v-if="importResult.skipped">，跳过 <b>{{ importResult.skipped }}</b> 行</span>
+          <span v-if="importResult.initial_password"> · 初始密码 {{ importResult.initial_password }}</span>
+        </div>
+        <ul v-if="importResult.errors.length" class="issue-list">
+          <li v-for="(e, i) in importResult.errors" :key="i" class="issue-item">
+            <span class="issue-line">第 {{ e.line }} 行</span>
+            <span class="issue-reason">{{ e.reason }}</span>
+            <span class="issue-content" :title="e.content">{{ e.content }}</span>
+          </li>
+        </ul>
+      </template>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" @click="submitImport">开始导入</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 课题 -->
     <el-dialog v-model="topicVisible" title="课题建档" width="600px" destroy-on-close>
       <p class="dialog-note">
@@ -449,6 +537,89 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: 13px;
+  color: var(--th-text-muted);
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.import-tip {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--th-text-muted);
+}
+
+.import-tip b {
+  color: var(--th-primary);
+}
+
+.import-input :deep(textarea) {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.import-check {
+  margin-top: 8px;
+}
+
+.import-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #2f6b4f;
+  background: rgba(47, 107, 79, 0.07);
+  border-left: 3px solid #2f6b4f;
+}
+
+.import-summary.has-error {
+  color: #8a6a1f;
+  background: rgba(198, 168, 107, 0.12);
+  border-left-color: var(--th-accent);
+}
+
+.issue-list {
+  max-height: 200px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.issue-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 2px;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--th-border-soft);
+}
+
+.issue-line {
+  flex: none;
+  color: #a29a8b;
+}
+
+.issue-reason {
+  flex: none;
+  color: #a33a2a;
+}
+
+.issue-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--th-text-muted);
+}
 .page {
   display: flex;
   flex-direction: column;

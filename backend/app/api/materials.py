@@ -18,6 +18,7 @@ from app.models.enums import Role, Stage
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.material import MaterialOut, MaterialPage
+from app.services import log_service
 from app.services import material_service as svc
 from app.services import student_service as student_svc
 
@@ -98,6 +99,19 @@ async def upload_material(
         upload=file,
         uploaded_by=actor.id,
     )
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="MATERIAL_UPLOAD",
+        target_type="STUDENT",
+        target_id=student.id,
+        detail={
+            "material_id": material.id,
+            "stage": material.stage,
+            "title": material.title,
+            "version": material.version,
+        },
+    )
     item = MaterialOut(
         id=material.id,
         student_id=material.student_id,
@@ -137,5 +151,14 @@ async def delete_material(db: DBDep, actor: CurrentUser, material_id: int) -> Ap
         pass
     else:
         raise AppError(40300, "只能删除自己上传的材料", http_status=403)
+    material_id, stage, title, version = material.id, material.stage, material.title, material.version
     await svc.delete_material(db, material)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="MATERIAL_DELETE",
+        target_type="STUDENT",
+        target_id=student.id,
+        detail={"material_id": material_id, "stage": stage, "title": title, "version": version},
+    )
     return ok(message="已删除该版本材料")

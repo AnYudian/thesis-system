@@ -85,3 +85,24 @@ class StudentCreated(BaseModel):
     student: StudentOut
     # 初始密码只在创建时返回一次，管理员负责转告学生
     initial_password: str | None = None
+
+
+class ImportIn(BaseModel):
+    """批量导入：前端把 CSV / 表格文本原样传上来，解析放在后端，
+    以后接 Excel 上传也只是换解析器。"""
+
+    text: str = Field(min_length=1, max_length=100_000)
+    create_account: bool = True
+
+
+class ImportErrorItem(BaseModel):
+    line: int
+    content: str
+    reason: str
+
+
+class ImportResult(BaseModel):
+    created: int
+    skipped: int
+    errors: list[ImportErrorItem]
+    initial_password: str | None = None

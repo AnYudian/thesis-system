@@ -17,6 +17,8 @@ from app.models.enums import Role, Stage, StudentStatus
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.student import (
+    ImportIn,
+    ImportResult,
     StudentCreate,
     StudentCreated,
     StudentDetail,
@@ -26,6 +28,7 @@ from app.schemas.student import (
     TopicIn,
     TopicOut,
 )
+from app.services import log_service
 from app.services import student_service as svc
 
 router = APIRouter(prefix="/students", tags=["学生与课题"])
@@ -96,9 +99,32 @@ async def get_student(db: DBDep, actor: CurrentUser, student_id: int) -> ApiResp
     return ok(await svc.get_detail(db, student))
 
 
+@router.post("/import", response_model=ApiResponse[ImportResult], summary="批量导入学生（仅管理员）")
+async def import_students(db: DBDep, actor: AdminUser, data: ImportIn) -> ApiResponse[ImportResult]:
+    result = await svc.import_students(db, text=data.text, create_account=data.create_account)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="STUDENT_IMPORT",
+        target_type="STUDENT",
+        detail={"created": result.created, "skipped": result.skipped},
+    )
+    return ok(result, message=f"已导入 {result.created} 人" + (f"，跳过 {result.skipped} 行" if result.skipped else ""))
+
+
 @router.post("", response_model=ApiResponse[StudentCreated], summary="新建学生（仅管理员）")
-async def create_student(db: DBDep, _: AdminUser, data: StudentCreate) -> ApiResponse[StudentCreated]:
+async def create_student(
+    db: DBDep, actor: AdminUser, data: StudentCreate
+) -> ApiResponse[StudentCreated]:
     student, initial_password = await svc.create_student(db, data)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="STUDENT_CREATE",
+        target_type="STUDENT",
+        target_id=student.id,
+        detail={"sno": student.sno, "name": student.name},
+    )
     detail = await svc.get_detail(db, student)
     return ok(
         StudentCreated(
@@ -111,17 +137,35 @@ async def create_student(db: DBDep, _: AdminUser, data: StudentCreate) -> ApiRes
 
 @router.patch("/{student_id}", response_model=ApiResponse[StudentDetail], summary="修改学生（仅管理员）")
 async def update_student(
-    db: DBDep, _: AdminUser, student_id: int, data: StudentUpdate
+    db: DBDep, actor: AdminUser, student_id: int, data: StudentUpdate
 ) -> ApiResponse[StudentDetail]:
     student = await svc.get_student_or_404(db, student_id)
+    changed = data.model_dump(exclude_unset=True)
     student = await svc.update_student(db, student, data)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="STUDENT_UPDATE",
+        target_type="STUDENT",
+        target_id=student.id,
+        detail={"sno": student.sno, "fields": sorted(changed)},
+    )
     return ok(await svc.get_detail(db, student), message="已保存")
 
 
 @router.delete("/{student_id}", response_model=ApiResponse[None], summary="删除学生（仅管理员）")
-async def delete_student(db: DBDep, _: AdminUser, student_id: int) -> ApiResponse[None]:
+async def delete_student(db: DBDep, actor: AdminUser, student_id: int) -> ApiResponse[None]:
     student = await svc.get_student_or_404(db, student_id)
+    sno, name = student.sno, student.name
     await svc.delete_student(db, student)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="STUDENT_DELETE",
+        target_type="STUDENT",
+        target_id=student_id,
+        detail={"sno": sno, "name": name},
+    )
     return ok(message="已删除学生及其登录账号")
 
 
@@ -132,6 +176,14 @@ async def upsert_topic(
     student = await svc.get_student_or_404(db, student_id)
     _ensure_topic_write(student, actor)
     topic = await svc.upsert_topic(db, student, data)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="TOPIC_UPDATE",
+        target_type="STUDENT",
+        target_id=student.id,
+        detail={"sno": student.sno, "title": topic.title},
+    )
     return ok(TopicOut.model_validate(topic), message="课题已保存")
 
 
@@ -140,4 +192,12 @@ async def delete_topic(db: DBDep, actor: CurrentUser, student_id: int) -> ApiRes
     student = await svc.get_student_or_404(db, student_id)
     _ensure_topic_write(student, actor)
     await svc.delete_topic(db, student)
+    await log_service.commit_record(
+        db,
+        user_id=actor.id,
+        action="TOPIC_DELETE",
+        target_type="STUDENT",
+        target_id=student.id,
+        detail={"sno": student.sno},
+    )
     return ok(message="课题已清除")

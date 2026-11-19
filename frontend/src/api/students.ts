@@ -61,6 +61,19 @@ export interface StudentListQuery {
   teacher_id?: number
 }
 
+export interface ImportIssue {
+  line: number
+  content: string
+  reason: string
+}
+
+export interface ImportResult {
+  created: number
+  skipped: number
+  errors: ImportIssue[]
+  initial_password: string | null
+}
+
 export const studentsApi = {
   list: (params: StudentListQuery) => get<StudentPage>('/students', params as Record<string, unknown>),
   detail: (id: number) => get<StudentDetail>(`/students/${id}`),
@@ -72,6 +85,9 @@ export const studentsApi = {
   setTopic: (id: number, body: TopicForm) => put<Topic>(`/students/${id}/topic`, body),
   clearTopic: (id: number) => del<null>(`/students/${id}/topic`),
   me: () => get<StudentDetail | null>('/students/me'),
+  /** 批量导入：文本原样上传，后端按行校验；能建的先建，错误的行带原因返回 */
+  importCsv: (text: string, createAccount: boolean) =>
+    post<ImportResult>('/students/import', { text, create_account: createAccount }),
 }
 
 export const teachersApi = {

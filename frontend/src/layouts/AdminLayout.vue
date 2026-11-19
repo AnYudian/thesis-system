@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   DataBoard,
@@ -7,6 +7,7 @@ import {
   FolderOpened,
   Setting,
   Stamp,
+  Tickets,
   TrendCharts,
   SwitchButton,
   User,
@@ -18,14 +19,17 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-// 已建成的只有概览；其余按分期占位，避免做出“点了没反应”的假菜单
-const menu = [
+type MenuItem = { title: string; icon: Component; to?: string; tag?: string; ready: boolean }
+
+// 全部已开放；以后加新模块时先放 ready: false 占位，避免做出“点了没反应”的假菜单
+const menu: MenuItem[] = [
   { title: '数据概览', icon: DataBoard, to: '/admin', ready: true },
   { title: '统计报表', icon: TrendCharts, to: '/admin/report', ready: true },
   { title: '学生与课题', icon: User, to: '/admin/students', ready: true },
   { title: '材料中心', icon: FolderOpened, to: '/admin/materials', ready: true },
   { title: '阶段流转', icon: Stamp, to: '/admin/reviews', ready: true },
-  { title: '账号管理', icon: Setting, tag: '后续', ready: false },
+  { title: '账号管理', icon: Setting, to: '/admin/accounts', ready: true },
+  { title: '操作日志', icon: Tickets, to: '/admin/logs', ready: true },
 ]
 
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? '管理控制台')

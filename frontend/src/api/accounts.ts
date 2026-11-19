@@ -1,0 +1,45 @@
+import { get, patch, post } from './http'
+
+export type AccountRole = 'ADMIN' | 'TEACHER' | 'STUDENT'
+
+export interface Account {
+  id: number
+  username: string
+  real_name: string | null
+  role: AccountRole
+  is_active: boolean
+  created_at: string
+  last_login_at: string | null
+}
+
+export interface AccountPage {
+  items: Account[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface AccountQuery {
+  page?: number
+  size?: number
+  keyword?: string
+  role?: AccountRole
+  is_active?: boolean
+}
+
+export interface AccountForm {
+  username: string
+  real_name: string
+  role: 'TEACHER' | 'ADMIN'
+  password?: string | null
+}
+
+export const accountsApi = {
+  list: (params: AccountQuery) => get<AccountPage>('/users', params as Record<string, unknown>),
+  create: (body: AccountForm) =>
+    post<{ user: Account; initial_password: string }>('/users', body),
+  update: (id: number, body: { real_name?: string; is_active?: boolean }) =>
+    patch<Account>(`/users/${id}`, body),
+  /** 重置为统一初始密码，返回值由页面弹窗告知管理员 */
+  resetPassword: (id: number) => post<{ password: string }>(`/users/${id}/reset-password`),
+}

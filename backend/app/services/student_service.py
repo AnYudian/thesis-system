@@ -4,17 +4,23 @@
 接口只负责权限入口，规则集中在服务里，后面接入批量导入时可以直接复用。
 """
 
+import csv
+import re
+
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.exceptions import AppError
 from app.core.security import hash_password
-from app.models.enums import Role, StudentStatus
+from app.models.enums import Role, Stage, StudentStatus
 from app.models.student import Student
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.student import (
+    ImportErrorItem,
+    ImportResult,
+    SNO_PATTERN,
     StudentCreate,
     StudentDetail,
     StudentOut,
@@ -258,3 +264,146 @@ async def delete_topic(db: AsyncSession, student: Student) -> None:
     if topic is not None:
         await db.delete(topic)
         await db.commit()
+
+_MAX_IMPORT_ROWS = 500
+_SNO_RE = re.compile(SNO_PATTERN)
+_TAB = chr(9)
+
+
+def _split_import_rows(text: str) -> list[tuple[int, list[str]]]:
+    """按行切分，自动识别制表符（从 Excel 复制）和逗号（CSV）。"""
+    lines = text.splitlines()
+    delimiter = _TAB if any(_TAB in line for line in lines if line.strip()) else ","
+    return [
+        (index, cells)
+        for index, cells in enumerate(csv.reader(lines, delimiter=delimiter), start=1)
+    ]
+
+
+async def import_students(db: AsyncSession, *, text: str, create_account: bool) -> ImportResult:
+    """批量建档。
+
+    逐行校验、能建的先建：一个学号填错不应该让整张名单都导不进去。
+    但顺序仍然是"全部校验完 → 一次性写入 → 一次 commit"，
+    避免中途报错留下半张名单。
+    """
+    parsed = _split_import_rows(text)
+    rows: list[tuple[int, str, str, str, str, str, str | None, str]] = []
+    errors: list[ImportErrorItem] = []
+    seen: set[str] = set()
+    header_checked = False
+
+    for line_no, cells in parsed:
+        cells = [cell.strip() for cell in cells]
+        if not any(cells):
+            continue
+        content = ",".join(cells)
+
+        if not header_checked:
+            header_checked = True
+            if cells[0].lower() in ("学号", "sno", "student_no") or "学号" in cells[0]:
+                continue  # 表头行，不当作数据
+
+        if len(cells) < 5:
+            errors.append(
+                ImportErrorItem(line=line_no, content=content, reason="至少需要 5 列：学号,姓名,专业,班级,年级")
+            )
+            continue
+
+        sno, name, major, class_name, grade = cells[:5]
+        teacher_username = cells[5] if len(cells) > 5 and cells[5] else None
+
+        if not _SNO_RE.fullmatch(sno) or not 4 <= len(sno) <= 30:
+            errors.append(
+                ImportErrorItem(line=line_no, content=content, reason="学号只能是 4-30 位字母、数字、下划线或横线")
+            )
+            continue
+        if not name:
+            errors.append(ImportErrorItem(line=line_no, content=content, reason="姓名为空"))
+            continue
+        if not major or not class_name or len(grade) < 2:
+            errors.append(ImportErrorItem(line=line_no, content=content, reason="专业 / 班级 / 年级不能为空"))
+            continue
+        if sno in seen:
+            errors.append(ImportErrorItem(line=line_no, content=content, reason="名单里学号重复"))
+            continue
+        seen.add(sno)
+        rows.append((line_no, sno, name, major, class_name, grade, teacher_username, content))
+
+    if len(rows) > _MAX_IMPORT_ROWS:
+        raise AppError(42233, f"单次最多导入 {_MAX_IMPORT_ROWS} 人，请分批", http_status=422)
+    if not rows:
+        return ImportResult(created=0, skipped=len(errors), errors=errors, initial_password=None)
+
+    snos = [row[1] for row in rows]
+    existing_sno = set((await db.scalars(select(Student.sno).where(Student.sno.in_(snos)))).all())
+    existing_account = set(
+        (await db.scalars(select(User.username).where(User.username.in_(snos)))).all()
+    )
+
+    wanted_teachers = {row[6] for row in rows if row[6]}
+    teacher_map: dict[str, int] = {}
+    if wanted_teachers:
+        teacher_map = {
+            username: user_id
+            for user_id, username in (
+                await db.execute(
+                    select(User.id, User.username).where(
+                        User.username.in_(wanted_teachers),
+                        User.role == Role.TEACHER.value,
+                        User.is_active.is_(True),
+                    )
+                )
+            ).all()
+        }
+
+    created = 0
+    for line_no, sno, name, major, class_name, grade, teacher_username, content in rows:
+        if sno in existing_sno or (create_account and sno in existing_account):
+            reason = "学号已存在" if sno in existing_sno else "账号已被占用"
+            errors.append(ImportErrorItem(line=line_no, content=content, reason=reason))
+            continue
+        if teacher_username and teacher_username not in teacher_map:
+            errors.append(
+                ImportErrorItem(
+                    line=line_no,
+                    content=content,
+                    reason=f"指导教师账号 {teacher_username} 不存在或已停用",
+                )
+            )
+            continue
+
+        user_id: int | None = None
+        if create_account:
+            account = User(
+                username=sno,
+                real_name=name,
+                role=Role.STUDENT.value,
+                password_hash=hash_password(DEFAULT_PASSWORD),
+            )
+            db.add(account)
+            await db.flush()
+            user_id = account.id
+
+        db.add(
+            Student(
+                user_id=user_id,
+                sno=sno,
+                name=name,
+                major=major,
+                class_name=class_name,
+                grade=grade,
+                teacher_id=teacher_map.get(teacher_username) if teacher_username else None,
+                current_stage=Stage.TOPIC.value,
+                status=StudentStatus.ACTIVE.value,
+            )
+        )
+        created += 1
+
+    await db.commit()
+    return ImportResult(
+        created=created,
+        skipped=len(errors),
+        errors=errors,
+        initial_password=DEFAULT_PASSWORD if create_account and created else None,
+    )

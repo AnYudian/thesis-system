@@ -88,6 +88,18 @@ const router = createRouter({
           meta: { title: '材料中心' },
         },
         {
+          path: 'accounts',
+          name: 'admin-accounts',
+          component: () => import('@/views/admin/AccountsView.vue'),
+          meta: { title: '账号管理' },
+        },
+        {
+          path: 'logs',
+          name: 'admin-logs',
+          component: () => import('@/views/admin/LogsView.vue'),
+          meta: { title: '操作日志' },
+        },
+        {
           path: 'reviews',
           name: 'admin-reviews',
           component: () => import('@/views/ReviewsView.vue'),
