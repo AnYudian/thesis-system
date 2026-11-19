@@ -173,7 +173,7 @@ async def _validate_teacher(db: AsyncSession, teacher_id: int) -> None:
     if teacher is None or teacher.role != Role.TEACHER.value:
         raise AppError(42201, "指导教师不存在或不是教师账号", http_status=422)
     if teacher.teacher_type != TeacherType.SUPERVISOR.value:
-        raise AppError(42203, "该账号是评阅教师，不能带学生", http_status=422)
+        raise AppError(42203, "该账号是就业老师，不能带学生", http_status=422)
     if not teacher.is_active:
         raise AppError(42202, "该教师账号已停用，不能指派", http_status=422)
 
@@ -490,7 +490,7 @@ async def assign_teacher(
     if teacher is None or teacher.role != Role.TEACHER.value:
         raise AppError(42201, "指导教师不存在或不是教师账号", http_status=422)
     if teacher.teacher_type != TeacherType.SUPERVISOR.value:
-        raise AppError(42203, "该账号是评阅教师，不能带学生", http_status=422)
+        raise AppError(42203, "该账号是就业老师，不能带学生", http_status=422)
     if not teacher.is_active:
         raise AppError(42202, "该教师账号已停用，不能指派", http_status=422)
 

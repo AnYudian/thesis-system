@@ -21,7 +21,7 @@ const roleLabel = computed(() => {
 // 教师和学生共用同一个外壳，只是导航项不同；管理员的导航在 AdminLayout 里
 const nav = computed(() => {
   if (auth.role === 'TEACHER') {
-    // 评阅教师暂时没有可做的事：只留工作台，等评阅任务定义好再开放入口，
+    // 就业老师暂时没有可做的事：只留工作台，等学校明确职责再开放入口，
     // 避免点进「阶段审核」看到空列表以为系统坏了
     if (auth.teacherType === 'REVIEWER') {
       return [{ to: '/', title: '工作台', exact: true }]

@@ -33,7 +33,7 @@ AdminUser = Annotated[User, Depends(require_role(Role.ADMIN))]
 
 @router.get("/teachers", response_model=ApiResponse[list[UserOut]], summary="指导教师列表（仅管理员，用于指派导师）")
 async def list_teachers(db: DBDep, _: AdminUser) -> ApiResponse[list[UserOut]]:
-    # 只返回指导教师：评阅教师不带学生，出现在指派下拉里会被误选
+    # 只返回指导教师：就业老师不带学生，出现在指派下拉里会被误选
     users = (
         await db.scalars(
             select(User)

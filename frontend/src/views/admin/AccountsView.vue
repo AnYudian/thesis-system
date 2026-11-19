@@ -292,7 +292,7 @@ onMounted(load)
         <p class="eyebrow">ACCOUNTS</p>
         <h2>账号管理</h2>
         <p class="sub">
-          教师账号在这里创建，分「指导教师」和「评阅教师」两类：指导教师带学生、做阶段审核，评阅教师不带学生。学生账号随「学生与课题」建档自动开通，管理员只保留内置的这一个。
+          教师账号在这里创建，分「指导教师」和「就业老师」两类：指导教师带学生、做阶段审核，就业老师不带学生、也不做审核。学生账号随「学生与课题」建档自动开通，管理员只保留内置的这一个。
         </p>
       </div>
       <el-button type="primary" :icon="Plus" @click="openCreate">新建账号</el-button>
@@ -490,7 +490,7 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <p class="dialog-note">
-        指导教师可被指派学生并做阶段审核；评阅教师不带学生，评阅任务等流程确定后开放。教师档案（学院 / 专业 / 手机号 / QQ）为必填：指导记录和中期检查都需要能联系到指导教师。
+        指导教师可被指派学生并做阶段审核；就业老师不带学生，目前在本系统不承担审核任务。教师档案（学院 / 专业 / 手机号 / QQ）为必填：指导记录和中期检查都需要能联系到指导教师。
       </p>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

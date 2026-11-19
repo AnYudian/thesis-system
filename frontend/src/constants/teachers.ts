@@ -1,9 +1,9 @@
 /**
  * 教师的两类身份。
  *
- * 学校只说了有「指导老师」「另一个老师」两种，具体叫法还没确认，
- * 所以中文文案只写在这里和后端 TEACHER_TYPE_LABELS：确认后两处一起改，
- * 代码值（SUPERVISOR / REVIEWER）和数据库数据都不用动。
+ * 学校已确认是「指导老师」「就业老师」两种。中文文案只写在这里和后端
+ * TEACHER_TYPE_LABELS：再改叫法时两处一起改，代码值（SUPERVISOR / REVIEWER）
+ * 和数据库数据不用动。就业老师目前在本系统没有审核任务，只占身份位。
  */
 export type TeacherType = 'SUPERVISOR' | 'REVIEWER'
 
@@ -21,14 +21,14 @@ export const TEACHER_TYPES: TeacherTypeMeta[] = [
   },
   {
     value: 'REVIEWER',
-    label: '评阅教师',
-    hint: '不带学生，评阅任务等流程确定后开放',
+    label: '就业老师',
+    hint: '不带学生，目前在本系统不承担审核任务',
   },
 ]
 
 export const TEACHER_TYPE_LABEL: Record<TeacherType, string> = {
   SUPERVISOR: '指导教师',
-  REVIEWER: '评阅教师',
+  REVIEWER: '就业老师',
 }
 
 export function teacherTypeLabel(value: string | null | undefined): string {

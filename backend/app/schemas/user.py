@@ -42,7 +42,7 @@ class AccountCreate(BaseModel):
     username: str = Field(min_length=3, max_length=50, pattern=USERNAME_PATTERN)
     real_name: str = Field(min_length=1, max_length=50)
     role: Role = Role.TEACHER
-    # 教师身份：默认指导教师（带学生、做阶段审核）；评阅教师不带学生
+    # 教师身份：默认指导教师（带学生、做阶段审核）；就业老师不带学生、不做审核
     teacher_type: TeacherType = TeacherType.SUPERVISOR
     # 不填就用统一初始密码 123456，和 P2 学生账号的口径保持一致
     password: str | None = Field(default=None, min_length=6, max_length=72)

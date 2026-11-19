@@ -205,7 +205,7 @@ async def update_account(
         account.real_name = data.real_name
 
     if account.role == Role.TEACHER.value and data.teacher_type is not None:
-        # 指导教师改成评阅教师前必须名下无人：否则这些学生既没导师审环节，
+        # 指导教师改成就业老师前必须名下无人：否则这些学生既没导师审环节，
         # 也会从「指派导师」列表里消失，等于把人卡在半路
         if (
             data.teacher_type is TeacherType.REVIEWER
@@ -217,7 +217,7 @@ async def update_account(
             if student_count:
                 raise AppError(
                     42238,
-                    f"该教师名下还有 {student_count} 名学生，请先改派导师再改为评阅教师",
+                    f"该教师名下还有 {student_count} 名学生，请先改派导师再改为就业老师",
                     http_status=422,
                 )
         account.teacher_type = data.teacher_type.value

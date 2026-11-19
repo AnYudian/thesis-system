@@ -31,7 +31,7 @@ async def remind(
     if actor.role != Role.TEACHER.value:
         raise AppError(40300, "只有指导教师能催交材料", http_status=403)
     if actor.teacher_type != TeacherType.SUPERVISOR.value:
-        raise AppError(40300, "评阅教师不带学生，不需要催交材料", http_status=403)
+        raise AppError(40300, "就业老师不带学生，不需要催交材料", http_status=403)
 
     student = await student_svc.get_student_or_404(db, student_id)
     # 和阶段审核同一把尺子：只能催自己带的学生，避免跨导师打扰

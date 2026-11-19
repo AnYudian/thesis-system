@@ -1,7 +1,7 @@
 """用户表。
 
 role 用 VARCHAR + CHECK 约束而不是 PostgreSQL 原生 enum：
-后者改枚举值需要 ALTER TYPE，迁移麻烦；本期角色稳定但后续可能加"教研室/评阅"。
+后者改枚举值需要 ALTER TYPE，迁移麻烦；本期角色稳定但后续可能加"教研室"等角色。
 """
 
 from sqlalchemy import Boolean, CheckConstraint, String
@@ -28,7 +28,7 @@ class User(Base, TimestampMixin):
     role: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
-    # 教师分工：SUPERVISOR（指导教师，带学生、做阶段审核）/ REVIEWER（评阅教师）。
+    # 教师分工：SUPERVISOR（指导教师，带学生、做阶段审核）/ REVIEWER（就业老师，仅身份占位）。
     # 导师分配、批量导入、阶段审核都只认 SUPERVISOR，见 student_service。
     teacher_type: Mapped[str | None] = mapped_column(String(16))
 

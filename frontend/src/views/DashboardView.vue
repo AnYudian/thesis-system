@@ -13,7 +13,7 @@ const auth = useAuthStore()
 const router = useRouter()
 
 const isTeacher = computed(() => auth.role === 'TEACHER')
-// 评阅教师目前没有任务可做：工作台单独给一页说明，不摆九张空卡片
+// 就业老师目前没有任务可做：工作台单独给一页说明，不摆九张空卡片
 const isReviewer = computed(() => isTeacher.value && auth.teacherType === 'REVIEWER')
 
 const roleLabel = computed(() => {
@@ -24,7 +24,7 @@ const roleLabel = computed(() => {
 
 const roleIntro = computed(() => {
   if (isReviewer.value) {
-    return '评阅教师：不带学生、不参与阶段审核；评阅任务等学校确定分配方式后开放。'
+    return '就业老师：不带学生，目前在本系统不承担任何审核任务，只保留身份与后续说明。'
   }
   const map = {
     ADMIN: '全局视角：维护账号与学生档案，查看全部材料、进度与统计。',
@@ -109,7 +109,7 @@ async function loadAllStudents() {
 }
 
 onMounted(async () => {
-  // 评阅教师没有名下学生，跳过这两次请求，免得工作台空转
+  // 就业老师没有名下学生，跳过这两次请求，免得工作台空转
   if (!isTeacher.value || isReviewer.value) return
   loading.value = true
   try {
@@ -199,10 +199,10 @@ onMounted(async () => {
     </p>
   </div>
 
-  <!-- 评阅教师：暂时没有评阅任务，先把身份和后续安排说清楚 -->
+  <!-- 就业老师：目前没有任务，先把身份和后续安排说清楚 -->
   <div v-else-if="isReviewer" class="page">
     <section class="hero hero--plain">
-      <p class="eyebrow">评阅教师 · 2026 届</p>
+      <p class="eyebrow">就业老师 · 2026 届</p>
       <h2>{{ auth.displayName }}，欢迎回来</h2>
       <p class="lede">{{ roleIntro }}</p>
 
@@ -215,15 +215,15 @@ onMounted(async () => {
       </div>
 
       <div class="reviewer-box">
-        <strong>目前还没有分配给你的评阅任务</strong>
+        <strong>目前没有分配给你的任务</strong>
         <p>
-          现在阶段审核由指导教师完成。等学校确定评阅由哪类教师负责、怎么分配论文后，这里会出现待评阅清单与打分入口。
+          本系统的阶段审核全部由指导教师完成。等学校明确就业老师在毕设流程里的职责、以及任务如何分配后，这里再开放对应入口。
         </p>
       </div>
     </section>
 
     <p class="note">
-      当前身份：评阅教师（账号 {{ auth.user?.username }}）。如果你实际需要带学生、做阶段审核，请联系管理员把身份改为指导教师。
+      当前身份：就业老师（账号 {{ auth.user?.username }}）。如果你实际需要带学生、做阶段审核，请联系管理员把身份改为指导教师。
     </p>
   </div>
 
@@ -556,7 +556,7 @@ onMounted(async () => {
   gap: 0;
 }
 
-/* 评阅教师的说明块放在深色题头里，沿用左侧竖线的“提示条”样式 */
+/* 就业老师的说明块放在深色题头里，沿用左侧竖线的“提示条”样式 */
 .reviewer-box {
   margin-top: 22px;
   padding: 13px 16px;

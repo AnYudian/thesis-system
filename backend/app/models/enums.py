@@ -10,10 +10,11 @@ class Role(str, Enum):
 class TeacherType(str, Enum):
     """教师的两类身份。
 
-    学校毕设流程里教师不止一种分工：带学生、走阶段审核的是指导教师，
-    另一类负责评阅等环节。具体叫法还在等校方确认，所以这里只固化代码值和
-    两个技术标识，中文文案集中放在前端 constants/teachers.ts 与
-    TEACHER_TYPE_LABELS，确认后改文案不用动数据。
+    学校毕设流程里教师分两种身份：带学生、走阶段审核的是指导教师，
+    另一种是就业老师。就业老师目前在本系统不承担任何审核任务，只作为
+    身份占位（所以代码值仍是 REVIEWER，没有跟着改名，改值需要迁移数据）。
+    中文文案集中放在前端 constants/teachers.ts 与 TEACHER_TYPE_LABELS，
+    学校若再改叫法，只动文案即可。
     """
 
     SUPERVISOR = "SUPERVISOR"
@@ -22,7 +23,7 @@ class TeacherType(str, Enum):
 
 TEACHER_TYPE_LABELS: dict[TeacherType, str] = {
     TeacherType.SUPERVISOR: "指导教师",
-    TeacherType.REVIEWER: "评阅教师",
+    TeacherType.REVIEWER: "就业老师",
 }
 
 

@@ -8,7 +8,7 @@ export interface UserInfo {
   username: string
   real_name: string | null
   role: Role
-  /** 仅教师有值：指导教师 / 评阅教师 */
+  /** 仅教师有值：指导教师 / 就业老师 */
   teacher_type?: TeacherType | null
 }
 
