@@ -1,0 +1,80 @@
+/* 学术风格设计令牌
+   深靛蓝（学位服）+ 暖纸色 + 衬线标题 + 哑金点缀。
+   颜色和字体只在这里定义，组件里一律引用变量；以后要换主题只改这一个文件。 */
+:root {
+  --th-primary: #1d3354;
+  --th-primary-deep: #101f33;
+  --th-primary-soft: #2c4a73;
+  --th-accent: #9c7c46;
+  --th-accent-soft: #c6a86b;
+  --th-bg: #f1ece1;
+  --th-surface: #fffdf7;
+  --th-text: #1c2733;
+  --th-text-muted: #56606e;
+  --th-border: #d6cdb9;
+  --th-border-soft: #e7dfcf;
+  --th-success: #35624a;
+  --th-warning: #94672a;
+  --th-danger: #8f4136;
+
+  --th-font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --th-font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+
+  /* Element Plus 变量覆盖：light-3/5/7/8/9 与 dark-2 是主色向白/黑过渡的色阶 */
+  --el-color-primary: var(--th-primary);
+  --el-color-primary-light-3: #5f718a;
+  --el-color-primary-light-5: #8e9aab;
+  --el-color-primary-light-7: #bcc4ce;
+  --el-color-primary-light-8: #d3d9e0;
+  --el-color-primary-light-9: #e9ecf0;
+  --el-color-primary-dark-2: #172843;
+  --el-color-success: var(--th-success);
+  --el-color-warning: var(--th-warning);
+  --el-color-danger: var(--th-danger);
+  --el-text-color-primary: var(--th-text);
+  --el-text-color-regular: #333d49;
+  --el-text-color-secondary: var(--th-text-muted);
+  --el-border-color: var(--th-border);
+  --el-border-color-light: var(--th-border-soft);
+  --el-bg-color: var(--th-surface);
+  --el-bg-color-page: var(--th-bg);
+  --el-fill-color-blank: var(--th-surface);
+  --el-font-family: var(--th-font-sans);
+  --el-border-radius-base: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--th-font-sans);
+  color: var(--th-text);
+  /* 暖纸底 + 极浅的横纹，模拟纸张纤维；前景仍有足够对比度 */
+  background:
+    radial-gradient(1200px 620px at 50% -12%, rgba(255, 255, 255, 0.6), transparent 62%),
+    repeating-linear-gradient(0deg, rgba(28, 39, 51, 0.014) 0 1px, transparent 1px 4px),
+    var(--th-bg);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.7;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--th-font-serif);
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+
+::selection {
+  background: rgba(156, 124, 70, 0.22);
+}
