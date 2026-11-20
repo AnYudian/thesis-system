@@ -5,8 +5,11 @@
 """
 
 from typing import Annotated
+from datetime import datetime
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy import func, select
 
 from app.api.deps import DBDep, require_role
@@ -18,6 +21,7 @@ from app.models.student import Student
 from app.models.user import User
 from app.schemas.stats import OverviewOut, RecentLogin, ReportOut, StageCount
 from app.services import report_service
+from app.services import export_service
 
 router = APIRouter(prefix="/stats", tags=["统计"])
 
@@ -87,3 +91,25 @@ async def report(
 ) -> ApiResponse[ReportOut]:
     # 报表全量返回，不分页：九环节 + 教师人数都是几十行级别，一次给前端更省事
     return ok(await report_service.build_report(db, days=days))
+
+
+@router.get("/export.xlsx", summary="导出统计报表（Excel，仅管理员）")
+async def export_xlsx(
+    db: DBDep,
+    _: AdminUser,
+    days: Annotated[int, Query(ge=7, le=90, description="动态趋势统计最近多少天")] = 14,
+) -> Response:
+    report = await report_service.build_report(db, days=days)
+    content = await export_service.build_workbook(db, report)
+
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M")
+    ascii_name = f"thesis-report-{stamp}.xlsx"
+    utf8_name = quote(f"统计报表-{stamp}.xlsx")
+    # 中文文件名走 filename*（RFC 5987），filename 留 ASCII 兜底给老浏览器
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename={ascii_name}; filename*=UTF-8''{utf8_name}"
+        },
+    )

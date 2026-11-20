@@ -1,4 +1,4 @@
-import { get } from './http'
+import http, { get } from './http'
 
 export interface StageCount {
   stage: string
@@ -67,14 +67,51 @@ export interface ActivityPoint {
   returns: number
 }
 
+export interface GuidanceStats {
+  total: number
+  meet: number
+  online: number
+  evidence: number
+  students_with_guidance: number
+  midterm_total: number
+  midterm_required: number
+  midterm_reached: number
+}
+
+export interface DistributionItem {
+  name: string
+  count: number
+}
+
+export interface DeadlineRow {
+  stage: string
+  label: string
+  deadline: string | null
+  students: number
+  overdue: number
+}
+
 export interface Report {
   summary: ReportSummary
   stages: StageReportRow[]
   teachers: TeacherReportRow[]
   activity: ActivityPoint[]
+  guidance: GuidanceStats
+  majors: DistributionItem[]
+  classes: DistributionItem[]
+  grades: DistributionItem[]
+  deadlines: DeadlineRow[]
 }
 
 export const statsApi = {
   overview: () => get<Overview>('/stats/overview'),
   report: (days = 14) => get<Report>('/stats/report', { days }),
+  /** 导出 Excel：后端生成多 Sheet 工作簿，这里只负责把二进制流取回来 */
+  async reportWorkbook(days: number): Promise<Blob> {
+    const { data } = await http.get<Blob>('/stats/export.xlsx', {
+      params: { days },
+      responseType: 'blob',
+    })
+    return data
+  },
 }

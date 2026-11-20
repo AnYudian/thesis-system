@@ -70,7 +70,7 @@ onMounted(load)
       <div>
         <p class="eyebrow">OVERVIEW · 2026 届</p>
         <h2>全过程数据概览</h2>
-        <p class="sub">按学生当前所处环节统计，数据取自学生档案的当前阶段。</p>
+        <p class="sub">实时运行看板：此刻各环节停了多少人、谁刚登录。历史趋势与导出请到「统计报表」。</p>
       </div>
       <el-button :icon="Refresh" size="small" plain @click="load">刷新数据</el-button>
     </section>

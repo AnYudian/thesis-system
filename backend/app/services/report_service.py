@@ -14,18 +14,23 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import STAGE_LABELS, STAGE_ORDER, ReviewAction, Role, StudentStatus
+from app.models.enums import STAGE_LABELS, STAGE_ORDER, ReviewAction, Role, Stage, StudentStatus
+from app.models.guidance import GuidanceRecord
 from app.models.material import Material
 from app.models.stage_review import StageReview
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.stats import (
     ActivityPoint,
+    DeadlineRow,
+    DistributionItem,
+    GuidanceStats,
     ReportOut,
     ReportSummary,
     StageReportRow,
     TeacherReportRow,
 )
+from app.services import config_service
 
 
 def _rate(approved: int, total: int) -> float | None:
@@ -263,9 +268,80 @@ async def build_report(db: AsyncSession, *, days: int = 14) -> ReportOut:
         avg_review_hours=await _avg_review_hours(db),
     )
 
+    # ---- 指导记录：中期检查的硬要求在报表里也要能看出来 ----
+    guidance_by_method = {
+        method: count
+        for method, count in (
+            await db.execute(
+                select(GuidanceRecord.method, func.count()).group_by(GuidanceRecord.method)
+            )
+        ).all()
+    }
+    evidence_total = await db.scalar(
+        select(func.count())
+        .select_from(GuidanceRecord)
+        .where(GuidanceRecord.evidence_path.is_not(None))
+    ) or 0
+    students_with_guidance = await db.scalar(
+        select(func.count(func.distinct(GuidanceRecord.student_id)))
+    ) or 0
+    midterm_counts = (
+        await db.execute(
+            select(GuidanceRecord.student_id, func.count())
+            .where(GuidanceRecord.stage == Stage.MIDTERM.value)
+            .group_by(GuidanceRecord.student_id)
+        )
+    ).all()
+    midterm_required = await config_service.get_midterm_min(db)
+    guidance = GuidanceStats(
+        total=sum(guidance_by_method.values()),
+        meet=guidance_by_method.get("MEET", 0),
+        online=guidance_by_method.get("ONLINE", 0),
+        evidence=evidence_total,
+        students_with_guidance=students_with_guidance,
+        midterm_total=sum(count for _, count in midterm_counts),
+        midterm_required=midterm_required,
+        midterm_reached=sum(1 for _, count in midterm_counts if count >= midterm_required),
+    )
+
+    # ---- 学生结构：专业 / 班级 / 年级 ----
+    async def _distribution(column) -> list[DistributionItem]:
+        rows = (
+            await db.execute(
+                select(column, func.count())
+                .where(column.is_not(None))
+                .group_by(column)
+                .order_by(func.count().desc(), column)
+            )
+        ).all()
+        return [DistributionItem(name=name or "未填写", count=count) for name, count in rows]
+
+    majors = await _distribution(Student.major)
+    classes = await _distribution(Student.class_name)
+    grades = await _distribution(Student.grade)
+
+    # ---- 截止与逾期：只统计当前停在某环节的学生，已放行的不再算逾期 ----
+    deadline_map = await config_service.get_stage_deadlines(db)
+    today = datetime.now().astimezone().date()
+    deadlines = [
+        DeadlineRow(
+            stage=stage,
+            label=STAGE_LABELS[stage],
+            deadline=deadline_map.get(stage),
+            students=stage_students.get(stage.value, 0),
+            overdue=(stage_students.get(stage.value, 0) if deadline_map.get(stage) and deadline_map[stage] < today else 0),
+        )
+        for stage in STAGE_ORDER
+    ]
+
     return ReportOut(
         summary=summary,
         stages=stages,
         teachers=rows_teachers,
         activity=await _activity(db, days=days),
+        guidance=guidance,
+        majors=majors,
+        classes=classes,
+        grades=grades,
+        deadlines=deadlines,
     )

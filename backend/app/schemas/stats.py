@@ -74,8 +74,43 @@ class ActivityPoint(BaseModel):
     returns: int
 
 
+class GuidanceStats(BaseModel):
+    """指导记录：总量、方式结构、中期达标情况。"""
+
+    total: int
+    meet: int
+    online: int
+    evidence: int
+    students_with_guidance: int
+    midterm_total: int
+    midterm_required: int
+    midterm_reached: int
+
+
+class DistributionItem(BaseModel):
+    """专业 / 班级 / 年级的人数分布，name 为展示名。"""
+
+    name: str
+    count: int
+
+
+class DeadlineRow(BaseModel):
+    """某环节的截止与逾期情况：只统计当前停在该环节的学生。"""
+
+    stage: Stage
+    label: str
+    deadline: date | None = None
+    students: int
+    overdue: int
+
+
 class ReportOut(BaseModel):
     summary: ReportSummary
     stages: list[StageReportRow]
     teachers: list[TeacherReportRow]
     activity: list[ActivityPoint]
+    guidance: GuidanceStats
+    majors: list[DistributionItem]
+    classes: list[DistributionItem]
+    grades: list[DistributionItem]
+    deadlines: list[DeadlineRow]
