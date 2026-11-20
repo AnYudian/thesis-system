@@ -34,6 +34,8 @@ async def decide(
     reviewer: User,
     action: ReviewAction,
     comment: str | None,
+    ai_run_id: int | None = None,
+    ai_adopted: list[dict] | None = None,
 ) -> tuple[StageReview, Student]:
     # FOR UPDATE：同一学生的两次点击串行执行，避免一次通过直接跨两环
     student = await db.scalar(select(Student).where(Student.id == student_id).with_for_update())
@@ -46,6 +48,13 @@ async def decide(
     text = (comment or "").strip() or None
     if action is ReviewAction.RETURN and text is None:
         raise AppError(42220, "退回必须填写原因，学生要知道改什么", http_status=422)
+
+    # 采纳记录必须对得上"这个学生、这个环节"的那次预审：
+    # 前端传错 id 时宁可拒绝，也不要让 A 同学的 AI 意见记到 B 同学名下
+    if ai_run_id is not None:
+        run = await db.get(AiRun, ai_run_id)
+        if run is None or run.student_id != student.id or run.stage != current.value:
+            raise AppError(42225, "AI 预审记录与该学生当前环节不匹配", http_status=422)
 
     # 审核时该环节的最新版本，写进记录里方便回溯"当时看的是哪一版"
     material_version = await db.scalar(
@@ -90,6 +99,8 @@ async def decide(
         to_stage=to_stage.value,
         material_version=material_version,
         comment=text,
+        ai_run_id=ai_run_id,
+        ai_adopted=ai_adopted or None,
         reviewer_id=reviewer.id,
     )
     db.add(review)
@@ -110,6 +121,7 @@ async def decide(
                 "stage": current.value,
                 "to_stage": to_stage.value,
                 "comment": text,
+                "ai_adopted": len(ai_adopted or []),
             },
         )
     )
@@ -187,6 +199,8 @@ async def list_reviews(
             to_stage=review.to_stage,  # type: ignore[arg-type]
             material_version=review.material_version,
             comment=review.comment,
+            ai_run_id=review.ai_run_id,
+            ai_adopted=review.ai_adopted,
             reviewer_name=reviewer_name,
             created_at=review.created_at,
         )

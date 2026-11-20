@@ -8,7 +8,7 @@ material_version 记录审核时该生在该环节的最新版本，
 以后材料被删或替换，也能知道当时看的是第几版。
 """
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -36,6 +36,13 @@ class StageReview(Base, TimestampMixin):
     to_stage: Mapped[str] = mapped_column(String(24), nullable=False)
     material_version: Mapped[int | None] = mapped_column(Integer)
     comment: Mapped[str | None] = mapped_column(Text)
+    # 老师这次决定参考了哪次 AI 预审（可空：没开 AI 或老师没用建议）
+    ai_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_runs.id", ondelete="SET NULL"), index=True
+    )
+    # 老师真正采纳的 AI 问题，存 [{level, title}] 而不是索引：
+    # 预审结果不会变，但存原文更便于以后统计"AI 建议采纳率"、也不怕前端改渲染顺序
+    ai_adopted: Mapped[list | None] = mapped_column(JSON)
     reviewer_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True
     )

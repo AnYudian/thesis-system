@@ -1,15 +1,29 @@
 """阶段审核的出入参。"""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.models.enums import ReviewAction, Stage
 
 
+class AiAdoptedIssue(BaseModel):
+    """老师采纳的一条 AI 建议。只存回看要用的最小信息。"""
+
+    level: Literal["MAJOR", "MINOR", "INFO"] = "MAJOR"
+    title: str = Field(max_length=200)
+
+
 class ReviewIn(BaseModel):
     action: ReviewAction
     comment: str | None = Field(default=None, max_length=500, description="退回时必须填写原因")
+    ai_run_id: int | None = Field(
+        default=None, description="本次决定参考的 AI 预审记录；没参考就不传"
+    )
+    ai_adopted: list[AiAdoptedIssue] | None = Field(
+        default=None, max_length=20, description="老师勾选采纳的 AI 问题；未勾选的视为未采纳"
+    )
 
 
 class ReviewOut(BaseModel):
@@ -24,6 +38,8 @@ class ReviewOut(BaseModel):
     to_stage: Stage
     material_version: int | None = None
     comment: str | None = None
+    ai_run_id: int | None = None
+    ai_adopted: list[AiAdoptedIssue] | None = None
     reviewer_name: str | None = None
     created_at: datetime
 

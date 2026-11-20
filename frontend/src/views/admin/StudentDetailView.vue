@@ -183,6 +183,11 @@ function toLabel(row: StageReview) {
   return stageIndex(row.to_stage) === STAGES.length ? '归档' : stageLabel(row.to_stage)
 }
 
+/** 退回时采纳的 AI 建议，悬停看清单；列表一行放不下，不展开占位 */
+function aiAdoptedText(row: StageReview) {
+  return (row.ai_adopted || []).map((issue, n) => `${n + 1}. ${issue.title}`).join('\n')
+}
+
 function fileSize(bytes: number | null) {
   if (!bytes) return '—'
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -543,7 +548,12 @@ onMounted(loadAll)
               {{ stageLabel(r.stage) }}
               <em>→ {{ toLabel(r) }}</em>
             </span>
-            <span class="history-comment" :title="r.comment || ''">{{ r.comment || '未填写意见' }}</span>
+            <div class="history-main">
+              <span class="history-comment" :title="r.comment || ''">{{ r.comment || '未填写意见' }}</span>
+              <span v-if="r.ai_adopted?.length" class="history-ai" :title="aiAdoptedText(r)">
+                AI 建议 {{ r.ai_adopted.length }} 条
+              </span>
+            </div>
             <span class="history-who">{{ r.reviewer_name || '—' }}</span>
           </li>
         </ul>
@@ -957,9 +967,34 @@ onMounted(loadAll)
   white-space: nowrap;
 }
 
+.history-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-main .history-comment {
+  min-width: 0;
+  flex: 1;
+}
+
 .history-who {
   font-size: 12px;
   color: var(--th-text-muted);
+}
+
+/* 采纳过 AI 建议的退回记录给个轻标识，悬停可看具体采纳了哪几条 */
+.history-ai {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #8a6a2f;
+  background: rgba(198, 168, 107, 0.16);
+  border: 1px solid rgba(198, 168, 107, 0.4);
+  border-radius: 2px;
+  cursor: help;
 }
 
 .opinion {

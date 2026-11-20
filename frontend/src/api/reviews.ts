@@ -29,6 +29,11 @@ export interface PendingItem {
   ai_checked_at: string | null
 }
 
+export interface AiAdoptedIssue {
+  level: 'MAJOR' | 'MINOR' | 'INFO'
+  title: string
+}
+
 export interface StageReview {
   id: number
   student_id: number
@@ -41,6 +46,10 @@ export interface StageReview {
   to_stage: string
   material_version: number | null
   comment: string | null
+  /** 这次决定参考的 AI 预审；没用 AI 就是 null */
+  ai_run_id: number | null
+  /** 老师勾选采纳的 AI 问题，未勾选的不在这里 */
+  ai_adopted: AiAdoptedIssue[] | null
   reviewer_name: string | null
   created_at: string
 }
@@ -88,6 +97,16 @@ export const reviewsApi = {
   list: (params?: ReviewQuery) => get<ReviewPage>('/reviews', params as Record<string, unknown>),
 
   /** 通过 / 退回。退回时后端会再校验一次 comment 非空，前端校验只是少跑一趟网络 */
-  decide: (studentId: number, action: ReviewAction, comment?: string) =>
-    post<ReviewResult>(`/reviews/${studentId}`, { action, comment: comment?.trim() || null }),
+  decide: (
+    studentId: number,
+    action: ReviewAction,
+    comment?: string,
+    ai?: { runId: number; adopted: AiAdoptedIssue[] },
+  ) =>
+    post<ReviewResult>(`/reviews/${studentId}`, {
+      action,
+      comment: comment?.trim() || null,
+      ai_run_id: ai?.runId ?? null,
+      ai_adopted: ai?.adopted?.length ? ai.adopted : null,
+    }),
 }
