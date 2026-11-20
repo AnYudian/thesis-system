@@ -13,6 +13,24 @@
 
 约定：**与 AI 无关的改动先落 `main`，再合并进 AI 线**；AI 线新增的提交只应包含 AI 相关内容。这样任意时刻从 `main` 导出的版本都是一个功能完整、可独立运行的系统。
 
+日常操作：
+
+```bash
+# 常规功能（登录、导入、审核、报表……）——在无 AI 版上做
+git checkout main
+# ...改完提交...
+git push origin main
+
+# 把常规功能同步进 AI 线（AI 线已 rebase 到 main，通常能自动合并）
+git checkout experiment/agent && git merge main
+
+# AI 功能的开发只在 experiment/agent 上做
+```
+
+无 AI 版打了标签 `v0.6-no-ai`；需要给老师一份"不带 AI"的包时，直接 `git archive --format=zip --prefix=thesis-system/ -o thesis-no-ai.zip v0.6-no-ai` 导出即可。
+
+注意：本机数据库已升级到 AI 版迁移（含 `ai_runs` 表）。切到 `main` 分支后**不要**再执行 `alembic upgrade/downgrade`（无 AI 版的迁移链里没有这一版），直接启动服务即可，多出来的表不影响运行；只有给新机器部署时才需要 `alembic upgrade head`。
+
 
 ## 技术栈
 
