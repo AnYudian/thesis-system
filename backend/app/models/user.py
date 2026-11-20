@@ -32,9 +32,9 @@ class User(Base, TimestampMixin):
     # 导师分配、批量导入、阶段审核都只认 SUPERVISOR，见 student_service。
     teacher_type: Mapped[str | None] = mapped_column(String(16))
 
-    # 教师档案：学院、专业、手机号、QQ。教师要用它联系学生，所以由业务层要求必填；
+    # 教师档案：学院、专业、手机号、邮箱。教师要用它联系学生，所以由业务层要求必填；
     # 数据库层面仍允许为空——历史账号和管理员账号都不需要这几项，加 NOT NULL 会挡住迁移。
     college: Mapped[str | None] = mapped_column(String(100))
     major: Mapped[str | None] = mapped_column(String(100))
     phone: Mapped[str | None] = mapped_column(String(30))
-    qq: Mapped[str | None] = mapped_column(String(30))
+    email: Mapped[str | None] = mapped_column(String(120))

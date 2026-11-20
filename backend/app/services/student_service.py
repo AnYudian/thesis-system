@@ -145,7 +145,7 @@ async def get_detail(db: AsyncSession, student: Student) -> StudentDetail:
         teacher = await db.get(User, student.teacher_id)
         if teacher is not None:
             teacher_name = teacher.real_name
-            # 详情页要显示导师的学院/专业/电话/QQ，一次取回整行，不再逐字段查
+            # 详情页要显示导师的学院/专业/电话/邮箱，一次取回整行，不再逐字段查
             teacher_brief = TeacherBrief(
                 id=teacher.id,
                 username=teacher.username,
@@ -153,7 +153,7 @@ async def get_detail(db: AsyncSession, student: Student) -> StudentDetail:
                 college=teacher.college,
                 major=teacher.major,
                 phone=teacher.phone,
-                qq=teacher.qq,
+                email=teacher.email,
             )
     username = None
     if student.user_id:

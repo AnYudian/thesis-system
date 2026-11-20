@@ -15,7 +15,7 @@ export interface Account {
   college: string | null
   major: string | null
   phone: string | null
-  qq: string | null
+  email: string | null
 }
 
 export interface AccountPage {
@@ -43,7 +43,7 @@ export interface AccountForm {
   college?: string | null
   major?: string | null
   phone?: string | null
-  qq?: string | null
+  email?: string | null
 }
 
 export const accountsApi = {
@@ -59,7 +59,7 @@ export const accountsApi = {
       college?: string | null
       major?: string | null
       phone?: string | null
-      qq?: string | null
+      email?: string | null
     },
   ) => patch<Account>(`/users/${id}`, body),
   /** 重置为统一初始密码，返回值由页面弹窗告知管理员 */

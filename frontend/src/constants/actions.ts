@@ -31,6 +31,7 @@ export const ACTIONS: ActionMeta[] = [
   { value: 'STAGE_APPROVE', label: '审核通过', tone: 'ok' },
   { value: 'STAGE_RETURN', label: '审核退回', tone: 'bad' },
   { value: 'REMIND', label: '催交材料', tone: 'warn' },
+  { value: 'CONFIG_UPDATE', label: '修改参数', tone: 'warn' },
 ]
 
 export const ACTION_META: Record<string, ActionMeta> = Object.fromEntries(

@@ -21,7 +21,7 @@ class UserOut(BaseModel):
     college: str | None = None
     major: str | None = None
     phone: str | None = None
-    qq: str | None = None
+    email: str | None = None
 
 
 class LoginData(BaseModel):

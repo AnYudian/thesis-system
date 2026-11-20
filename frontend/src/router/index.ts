@@ -113,6 +113,12 @@ const router = createRouter({
           meta: { title: '账号管理' },
         },
         {
+          path: 'settings',
+          name: 'admin-settings',
+          component: () => import('@/views/admin/SettingsView.vue'),
+          meta: { title: '参数配置' },
+        },
+        {
           path: 'logs',
           name: 'admin-logs',
           component: () => import('@/views/admin/LogsView.vue'),

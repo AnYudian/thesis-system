@@ -31,7 +31,7 @@ export interface TeacherBrief {
   college: string | null
   major: string | null
   phone: string | null
-  qq: string | null
+  email: string | null
 }
 
 export interface StudentDetail extends Student {

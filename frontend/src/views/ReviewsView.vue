@@ -54,7 +54,7 @@ const displayItems = computed(() => {
   })
 })
 
-// 中期检查先看指导次数：不够 10 次时把「通过」按钮直接禁掉，
+// 中期检查先看指导次数：不够配置的次数时把「通过」按钮直接禁掉，
 // 后端也会再拦一次，这里只是让老师少点一次、提前知道差在哪
 function canApprove(row: PendingItem) {
   return !row.guidance_required || row.guidance_count >= row.guidance_required
@@ -286,6 +286,9 @@ watch(
               <span class="stage-pill">{{ stageLabel(row.stage) }}</span>
               <span class="stage-step">{{ stageIndex(row.stage) }} / {{ STAGES.length }}</span>
             </div>
+            <div v-if="row.stage_deadline" class="deadline-line" :class="{ 'is-overdue': row.stage_overdue }">
+              截止 {{ row.stage_deadline }}<template v-if="row.stage_overdue"> · 已逾期</template>
+            </div>
             <div class="track" :title="`已完成 ${stageIndex(row.stage) - 1} 个环节`">
               <span
                 v-for="(s, i) in STAGES"
@@ -350,7 +353,7 @@ watch(
             <el-button link type="primary" @click="openDetail(row.student_id)">详情</el-button>
             <el-tooltip
               :disabled="canApprove(row)"
-              content="中期检查要求指导记录满 10 次，请先在「指导记录」补齐"
+              :content="`中期检查要求指导记录满 ${row.guidance_required || 10} 次，请先在「指导记录」补齐`"
               placement="top"
             >
               <span>
@@ -559,6 +562,16 @@ watch(
   border: 1px solid var(--th-border-soft);
   border-radius: 3px;
   white-space: nowrap;
+}
+
+.deadline-line {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--th-text-muted);
+}
+
+.deadline-line.is-overdue {
+  color: #a33c2c;
 }
 
 .track {

@@ -28,7 +28,7 @@ TEACHER_PROFILE_FIELDS = (
     ("college", "学院"),
     ("major", "专业"),
     ("phone", "手机号"),
-    ("qq", "QQ"),
+    ("email", "邮箱"),
 )
 
 
@@ -37,11 +37,12 @@ def _clean(value: str | None) -> str | None:
     return text or None
 
 
-def _ensure_contact_format(phone: str | None, qq: str | None) -> None:
+def _ensure_contact_format(phone: str | None, email: str | None) -> None:
     if phone and not re.fullmatch(r"1[3-9]\d{9}", phone):
         raise AppError(42236, "手机号格式不正确，请填 11 位手机号", http_status=422)
-    if qq and not re.fullmatch(r"[1-9]\d{4,11}", qq):
-        raise AppError(42237, "QQ 号格式不正确，请填 5-12 位数字", http_status=422)
+    # 不引入 email-validator 依赖，邮箱只做基本形状校验：有本地部分、有域名、有后缀
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", email):
+        raise AppError(42237, "邮箱格式不正确，例如 teacher@school.edu.cn", http_status=422)
 
 
 def _ensure_teacher_profile(user: User) -> None:
@@ -68,7 +69,7 @@ def to_out(user: User, last_login_at=None) -> AccountOut:
         college=user.college,
         major=user.major,
         phone=user.phone,
-        qq=user.qq,
+        email=user.email,
     )
 
 
@@ -166,13 +167,13 @@ async def create_account(db: AsyncSession, data: AccountCreate) -> tuple[User, s
         password_hash=hash_password(password),
     )
     if data.role is Role.TEACHER:
-        # 手机号/QQ 先做格式校验再落库，避免以后按号码加人时混进无法使用的数据
-        _ensure_contact_format(_clean(data.phone), _clean(data.qq))
+        # 手机号/邮箱先做格式校验再落库，避免混进无法联系到人的数据
+        _ensure_contact_format(_clean(data.phone), _clean(data.email))
         user.teacher_type = data.teacher_type.value
         user.college = _clean(data.college)
         user.major = _clean(data.major)
         user.phone = _clean(data.phone)
-        user.qq = _clean(data.qq)
+        user.email = _clean(data.email)
         _ensure_teacher_profile(user)
 
     db.add(user)
@@ -229,11 +230,11 @@ async def update_account(
         account.major = _clean(data.major)
     if data.phone is not None:
         account.phone = _clean(data.phone)
-    if data.qq is not None:
-        account.qq = _clean(data.qq)
+    if data.email is not None:
+        account.email = _clean(data.email)
 
     if account.role == Role.TEACHER.value:
-        _ensure_contact_format(account.phone, account.qq)
+        _ensure_contact_format(account.phone, account.email)
         _ensure_teacher_profile(account)
 
     await db.commit()

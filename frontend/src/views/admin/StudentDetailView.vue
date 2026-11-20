@@ -85,8 +85,8 @@ const midtermProgress = computed(() => {
   }
 })
 
-// 中期检查的 10 次要求只在学生进入这一环节后才有意义：
-// 前三个环节就摆一条"还差 10 次"，老师会误以为学生被卡住了
+// 中期检查的次数要求（管理员可配，默认 10 次）只在学生进入这一环节后才有意义：
+// 前三个环节就摆一条"还差 N 次"，老师会误以为学生被卡住了
 const midtermIndex = STAGES.findIndex((s) => s.code === 'MIDTERM')
 const midtermPhase = computed<'BEFORE' | 'AT' | 'AFTER'>(() => {
   const d = detail.value
@@ -179,7 +179,7 @@ const decideVisible = ref(false)
 const decideAction = ref<ReviewAction>('APPROVE')
 const decideTarget = ref<ReviewTarget | null>(null)
 
-// 中期检查没满 10 次时不允许通过；退回不拦，材料不合格时老师要能直接退
+// 中期检查没满要求次数时不允许通过；退回不拦，材料不合格时老师要能直接退
 const approveBlocked = computed(() => {
   const d = detail.value
   if (!d || d.current_stage !== 'MIDTERM') return false
@@ -281,8 +281,8 @@ onMounted(loadAll)
             <strong>{{ detail.teacher.phone || '未填' }}</strong>
           </div>
           <div>
-            <span class="side-label">QQ</span>
-            <strong>{{ detail.teacher.qq || '未填' }}</strong>
+            <span class="side-label">邮箱</span>
+            <strong>{{ detail.teacher.email || '未填' }}</strong>
           </div>
         </div>
         <p v-else class="empty">该生还没有指派指导教师。</p>
@@ -332,7 +332,7 @@ onMounted(loadAll)
           <div class="action-btns">
             <el-tooltip
               :disabled="!approveBlocked"
-              content="中期检查要求指导记录满 10 次，请先在「指导记录」补齐"
+              :content="`中期检查要求指导记录满 ${summary?.midterm_required ?? 10} 次，请先在「指导记录」补齐`"
               placement="top"
             >
               <span>

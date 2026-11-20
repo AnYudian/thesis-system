@@ -7,7 +7,10 @@ import ReminderBanner from '@/components/ReminderBanner.vue'
 import { materialsApi, type Material } from '@/api/materials'
 import { studentsApi } from '@/api/students'
 import { STAGES } from '@/constants/stages'
+import { useConfigStore } from '@/stores/config'
 import { formatSize, formatTime } from '@/utils/format'
+
+const configStore = useConfigStore()
 
 const loading = ref(false)
 const uploading = ref(false)
@@ -22,6 +25,11 @@ const form = reactive({ stage: 'TOPIC', title: '', note: '' })
 
 const stageOptions = STAGES.map((s) => ({ value: s.code, label: s.label }))
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
+
+// 本环节截止日期由管理员在「参数配置」里设，没设就不显示提示条
+const currentStage = ref<string | null>(null)
+const stageDeadline = computed(() => configStore.deadlineOf(currentStage.value))
+const stageDaysLeft = computed(() => configStore.daysLeft(currentStage.value))
 
 // 九环节覆盖情况：哪一环还没有材料一眼就能看出来
 const coverage = computed(() =>
@@ -110,11 +118,14 @@ onMounted(async () => {
   // 预选当前环节，学生多数时候就是交这一环的材料
   try {
     const me = await studentsApi.me()
-    if (me) form.stage = me.current_stage
+    if (me) {
+      form.stage = me.current_stage
+      currentStage.value = me.current_stage
+    }
   } catch {
     // 没有档案也不影响看历史材料
   }
-  await load()
+  await Promise.all([load(), configStore.load()])
 })
 </script>
 
@@ -130,6 +141,24 @@ onMounted(async () => {
     </header>
 
     <ReminderBanner />
+
+    <section
+      v-if="stageDeadline"
+      class="deadline-banner"
+      :class="{ 'is-overdue': (stageDaysLeft ?? 0) < 0 }"
+    >
+      <div class="db-left">
+        <span class="db-label">本环节截止</span>
+        <strong class="db-date">{{ stageDeadline }}</strong>
+        <span class="db-stage">{{ stageLabel(currentStage || '') }}</span>
+      </div>
+      <span class="db-right">
+        <template v-if="stageDaysLeft === null"></template>
+        <template v-else-if="stageDaysLeft < 0">已逾期 {{ -stageDaysLeft }} 天，请尽快提交并联系导师</template>
+        <template v-else-if="stageDaysLeft === 0">今天截止</template>
+        <template v-else>还剩 {{ stageDaysLeft }} 天</template>
+      </span>
+    </section>
 
     <section class="panel upload-panel">
       <div class="panel-title">
@@ -235,6 +264,54 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.deadline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(245, 239, 225, 0.6);
+  border: 1px solid var(--th-border);
+  border-left: 3px solid var(--th-accent);
+  border-radius: 5px;
+}
+
+.deadline-banner.is-overdue {
+  background: rgba(163, 60, 44, 0.05);
+  border-left-color: #a33c2c;
+}
+
+.db-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.db-label {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+
+.db-date {
+  font-family: var(--th-font-serif);
+  font-size: 16px;
+  color: var(--th-primary-deep);
+}
+
+.db-stage {
+  font-size: 12px;
+  color: var(--th-accent);
+}
+
+.db-right {
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+}
+
+.is-overdue .db-right {
+  color: #a33c2c;
+}
+
 .page {
   display: flex;
   flex-direction: column;

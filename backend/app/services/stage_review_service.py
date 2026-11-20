@@ -7,6 +7,8 @@
 - 审核连点两下不能推进两个环节：查学生时加行锁，第二个请求会看到已经变了的状态
 """
 
+from datetime import date
+
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -21,7 +23,7 @@ from app.models.stage_review import StageReview
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.review import PendingItem, ReviewOut
-from app.services.guidance_service import MIDTERM_REQUIRED
+from app.services import config_service
 
 
 async def decide(
@@ -51,7 +53,8 @@ async def decide(
         )
     )
 
-    # 中期检查是硬门槛：没指导满 10 次就放行，等于把"过程管理"变成了走过场。
+    # 中期检查是硬门槛：没指导满要求次数就放行，等于把"过程管理"变成了走过场。
+    # 次数由管理员在「参数配置」里设，不再写死。
     # 只拦通过，不拦退回——材料不合格时教师仍应能直接退回。
     if action is ReviewAction.APPROVE and current is Stage.MIDTERM:
         guidance_done = await db.scalar(
@@ -62,10 +65,11 @@ async def decide(
                 GuidanceRecord.stage == Stage.MIDTERM.value,
             )
         ) or 0
-        if guidance_done < MIDTERM_REQUIRED:
+        required = await config_service.get_midterm_min(db)
+        if guidance_done < required:
             raise AppError(
                 42223,
-                f"中期检查要求指导记录满 {MIDTERM_REQUIRED} 次，当前只有 {guidance_done} 次。"
+                f"中期检查要求指导记录满 {required} 次，当前只有 {guidance_done} 次。"
                 "请先在「指导记录」补充，或直接退回让学生完善。",
                 http_status=422,
             )
@@ -280,12 +284,18 @@ async def pending(
     ).all()
     last_reminded = dict(reminder_rows)
 
+    # 参数配置每次请求读一次，别在循环里反复查；中期次数与截止日期都从这里取
+    midterm_required = await config_service.get_midterm_min(db)
+    deadlines = await config_service.get_stage_deadlines(db)
+    today = date.today()
+
     items: list[PendingItem] = []
     for student in students:
         count, last_at, version = material_stats.get(
             (student.id, student.current_stage), (0, None, None)
         )
         review = last_review.get((student.id, student.current_stage))
+        stage_deadline = deadlines.get(Stage(student.current_stage))
         items.append(
             PendingItem(
                 student_id=student.id,
@@ -303,9 +313,11 @@ async def pending(
                     (student.id, student.current_stage), 0
                 ),
                 guidance_required=(
-                    MIDTERM_REQUIRED if student.current_stage == Stage.MIDTERM.value else 0
+                    midterm_required if student.current_stage == Stage.MIDTERM.value else 0
                 ),
                 last_reminded_at=last_reminded.get(student.id),
+                stage_deadline=stage_deadline,
+                stage_overdue=bool(stage_deadline and stage_deadline < today),
             )
         )
 

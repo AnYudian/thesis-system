@@ -1,6 +1,6 @@
 """阶段审核的出入参。"""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -49,9 +49,12 @@ class PendingItem(BaseModel):
     last_action: ReviewAction | None = None
     last_comment: str | None = None
     last_reviewed_at: datetime | None = None
-    # 当前环节的指导记录数；中期检查要求满 10 次才允许通过
+    # 当前环节的指导记录数；中期检查要求满「参数配置」里的次数才允许通过
     guidance_count: int = 0
     guidance_required: int = 0
+    # 当前环节的截止日期（管理员在参数配置里设），过了就算逾期
+    stage_deadline: date | None = None
+    stage_overdue: bool = False
     # 最近一次催交时间：列表里提示"什么时候催过"，避免老师隔天重复催
     last_reminded_at: datetime | None = None
 

@@ -10,6 +10,7 @@ import {
   Tickets,
   TrendCharts,
   SwitchButton,
+  Tools,
   User,
 } from '@element-plus/icons-vue'
 
@@ -31,6 +32,7 @@ const menu: MenuItem[] = [
   { title: '材料中心', icon: FolderOpened, to: '/admin/materials', ready: true },
   { title: '阶段流转', icon: Stamp, to: '/admin/reviews', ready: true },
   { title: '账号管理', icon: Setting, to: '/admin/accounts', ready: true },
+  { title: '参数配置', icon: Tools, to: '/admin/settings', ready: true },
   { title: '操作日志', icon: Tickets, to: '/admin/logs', ready: true },
 ]
 

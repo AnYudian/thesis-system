@@ -1,7 +1,7 @@
 """指导记录业务。
 
-中期检查要求教师指导学生不少于 10 次，且要能追溯到"时间 / 方式 / 内容 / 证据"。
-这里只负责记录本身；"不够 10 次不许放行"的判断在阶段审核服务里，
+中期检查要求教师指导学生达到管理员配置的次数（默认 10 次），且要能追溯到
+"时间 / 方式 / 内容 / 证据"。这里只负责记录本身；"不够次数不许放行"的判断在阶段审核服务里，
 因为那属于流程规则，不属于记录维护。
 
 证据文件和阶段材料分开存（data/uploads/guidance/...），
@@ -24,9 +24,7 @@ from app.models.guidance import GuidanceRecord
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.guidance import GuidanceOut, GuidanceSummary
-
-# 中期检查的硬性次数，和前端展示的进度条保持一致；改这里一处即可
-MIDTERM_REQUIRED = 10
+from app.services import config_service
 
 EVIDENCE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
 _MAX_EVIDENCE_MB = 10
@@ -269,5 +267,5 @@ async def summary(db: AsyncSession, student_id: int) -> GuidanceSummary:
         total=sum(by_stage.values()),
         by_stage=by_stage,
         midterm_count=by_stage.get(Stage.MIDTERM.value, 0),
-        midterm_required=MIDTERM_REQUIRED,
+        midterm_required=await config_service.get_midterm_min(db),
     )

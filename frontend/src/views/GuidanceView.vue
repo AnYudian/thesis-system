@@ -6,7 +6,10 @@ import { Plus, Refresh, Search, UploadFilled } from '@element-plus/icons-vue'
 import { METHOD_LABELS, guidanceApi, type GuidanceRecord, type GuidanceSummary } from '@/api/guidance'
 import { studentsApi, type Student } from '@/api/students'
 import { STAGES } from '@/constants/stages'
+import { useConfigStore } from '@/stores/config'
 import { formatTime } from '@/utils/format'
+
+const configStore = useConfigStore()
 
 const loading = ref(false)
 const items = ref<GuidanceRecord[]>([])
@@ -152,7 +155,8 @@ async function remove(row: GuidanceRecord) {
 }
 
 onMounted(async () => {
-  students.value = (await studentsApi.list({ page: 1, size: 100 })).items
+  const [, list] = await Promise.all([configStore.load(), studentsApi.list({ page: 1, size: 100 })])
+  students.value = list.items
   await load()
 })
 </script>
@@ -164,7 +168,7 @@ onMounted(async () => {
         <p class="eyebrow">GUIDANCE LOG</p>
         <h2>指导记录</h2>
         <p class="sub">
-          中期检查要求对每位学生指导不少于 10 次，每次登记时间、方式、内容和证据。
+          中期检查要求对每位学生指导不少于 {{ configStore.midtermMin }} 次，每次登记时间、方式、内容和证据。
           管理员可在「阶段流转 → 详情」里核对，次数不足时中期无法通过。
         </p>
       </div>

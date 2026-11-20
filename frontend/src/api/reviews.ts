@@ -14,9 +14,12 @@ export interface PendingItem {
   last_action: ReviewAction | null
   last_comment: string | null
   last_reviewed_at: string | null
-  // 当前环节的指导记录数 / 要求次数（中期为 10，其余为 0）
+  // 当前环节的指导记录数 / 要求次数（中期按参数配置，其余为 0）
   guidance_count: number
   guidance_required: number
+  // 当前环节截止日期（管理员配置），过了就 overdue
+  stage_deadline: string | null
+  stage_overdue: boolean
   // 最近一次催交时间；没有催过为 null
   last_reminded_at: string | null
 }

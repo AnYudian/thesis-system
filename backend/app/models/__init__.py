@@ -8,6 +8,7 @@ from app.models.material import Material
 from app.models.reminder import Reminder
 from app.models.stage_review import StageReview
 from app.models.student import Student
+from app.models.system_setting import SystemSetting
 from app.models.topic import Topic
 from app.models.user import User
 
@@ -24,6 +25,7 @@ __all__ = [
     "StageReview",
     "Student",
     "StudentStatus",
+    "SystemSetting",
     "Topic",
     "User",
 ]

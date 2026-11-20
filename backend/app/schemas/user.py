@@ -28,7 +28,7 @@ class AccountOut(BaseModel):
     college: str | None = None
     major: str | None = None
     phone: str | None = None
-    qq: str | None = None
+    email: str | None = None
 
 
 class AccountPage(BaseModel):
@@ -51,7 +51,7 @@ class AccountCreate(BaseModel):
     college: str | None = Field(default=None, max_length=100)
     major: str | None = Field(default=None, max_length=100)
     phone: str | None = Field(default=None, max_length=30)
-    qq: str | None = Field(default=None, max_length=30)
+    email: str | None = Field(default=None, max_length=120)
 
 
 class AccountUpdate(BaseModel):
@@ -61,7 +61,7 @@ class AccountUpdate(BaseModel):
     college: str | None = Field(default=None, max_length=100)
     major: str | None = Field(default=None, max_length=100)
     phone: str | None = Field(default=None, max_length=30)
-    qq: str | None = Field(default=None, max_length=30)
+    email: str | None = Field(default=None, max_length=120)
 
 
 class AccountCreated(BaseModel):

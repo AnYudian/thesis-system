@@ -89,7 +89,7 @@ const form = reactive({
   college: '',
   major: '',
   phone: '',
-  qq: '',
+  email: '',
 })
 
 // 教师档案在界面上是必填；管理员账号没有这些字段，所以校验要看当前角色
@@ -131,13 +131,13 @@ const rules: FormRules = {
       trigger: 'blur' as const,
     },
   ],
-  qq: [
-    teacherRequired('QQ 号'),
+  email: [
+    teacherRequired('邮箱'),
     {
       validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
         const text = (value || '').trim()
-        if (form.role === 'TEACHER' && text && !/^[1-9]\d{4,11}$/.test(text)) {
-          callback(new Error('QQ 号为 5-12 位数字'))
+        if (form.role === 'TEACHER' && text && !/^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(text)) {
+          callback(new Error('邮箱格式不正确，例如 teacher@school.edu.cn'))
           return
         }
         callback()
@@ -157,7 +157,7 @@ function resetForm() {
     college: '',
     major: '',
     phone: '',
-    qq: '',
+    email: '',
   })
 }
 
@@ -180,7 +180,7 @@ function openEdit(row: Account) {
     college: row.college ?? '',
     major: row.major ?? '',
     phone: row.phone ?? '',
-    qq: row.qq ?? '',
+    email: row.email ?? '',
   })
   dialogVisible.value = true
 }
@@ -198,9 +198,9 @@ async function submitAccount() {
             college: form.college.trim(),
             major: form.major.trim(),
             phone: form.phone.trim(),
-            qq: form.qq.trim(),
+            email: form.email.trim(),
           }
-        : { college: null, major: null, phone: null, qq: null }
+        : { college: null, major: null, phone: null, email: null }
 
     if (mode.value === 'create') {
       const res = await accountsApi.create({
@@ -360,11 +360,11 @@ onMounted(load)
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="联系方式" width="148">
+        <el-table-column label="联系方式" width="200">
           <template #default="{ row }">
             <template v-if="row.role === 'TEACHER'">
               <span class="cell-main">{{ row.phone || '未填手机' }}</span>
-              <span class="cell-sub">QQ {{ row.qq || '—' }}</span>
+              <span class="cell-sub contact-sub">邮箱 {{ row.email || '—' }}</span>
             </template>
             <span v-else class="muted">—</span>
           </template>
@@ -481,8 +481,8 @@ onMounted(load)
           <el-form-item label="手机号" prop="phone">
             <el-input v-model="form.phone" maxlength="11" placeholder="11 位手机号，学生需要时能联系到你" />
           </el-form-item>
-          <el-form-item label="QQ 号" prop="qq">
-            <el-input v-model="form.qq" maxlength="12" placeholder="5-12 位数字" />
+          <el-form-item label="邮箱" prop="email">
+            <el-input v-model="form.email" maxlength="120" placeholder="如 teacher@school.edu.cn" />
           </el-form-item>
         </template>
         <el-form-item v-if="mode === 'create'" label="初始密码" prop="password">
@@ -490,7 +490,7 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <p class="dialog-note">
-        指导教师可被指派学生并做阶段审核；就业老师不带学生，目前在本系统不承担审核任务。教师档案（学院 / 专业 / 手机号 / QQ）为必填：指导记录和中期检查都需要能联系到指导教师。
+        指导教师可被指派学生并做阶段审核；就业老师不带学生，目前在本系统不承担审核任务。教师档案（学院 / 专业 / 手机号 / 邮箱）为必填：指导记录和中期检查都需要能联系到指导教师。
       </p>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -592,6 +592,11 @@ onMounted(load)
 .cell-main {
   display: block;
   font-size: 13px;
+}
+
+.contact-sub {
+  word-break: break-all;
+  line-height: 1.5;
 }
 
 .cell-sub {
