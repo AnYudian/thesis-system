@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Download } from '@element-plus/icons-vue'
 
 import ReviewDecisionDialog from '@/components/ReviewDecisionDialog.vue'
+import AiReviewPanel from '@/components/AiReviewPanel.vue'
 import { METHOD_LABELS, guidanceApi, type GuidanceRecord, type GuidanceSummary } from '@/api/guidance'
 import { materialsApi, type Material } from '@/api/materials'
 import { reviewsApi, type ReviewAction, type ReviewTarget, type StageReview } from '@/api/reviews'
@@ -361,6 +362,8 @@ onMounted(loadAll)
           </div>
         </div>
       </section>
+
+      <AiReviewPanel :student-id="studentId" :can-rerun="isTeacher || auth.role === 'ADMIN'" />
 
       <section class="panel">
         <header class="panel-head">

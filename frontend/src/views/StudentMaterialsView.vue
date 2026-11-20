@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, genFileId, type UploadFile, type UploadInstanc
 import { Download, UploadFilled } from '@element-plus/icons-vue'
 
 import ReminderBanner from '@/components/ReminderBanner.vue'
+import AiReviewPanel from '@/components/AiReviewPanel.vue'
 import { materialsApi, type Material } from '@/api/materials'
 import { studentsApi } from '@/api/students'
 import { STAGES } from '@/constants/stages'
@@ -208,6 +209,8 @@ onMounted(async () => {
         <el-button type="primary" :loading="uploading" @click="submit">上传并存为最新版本</el-button>
       </div>
     </section>
+
+    <AiReviewPanel />
 
     <section class="panel">
       <div class="panel-title">
