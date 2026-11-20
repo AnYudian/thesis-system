@@ -154,7 +154,10 @@ onBeforeUnmount(stopPolling)
   <section v-loading="loading" class="ai-panel" :class="{ 'ai-panel--off': !enabled }">
     <header class="ai-head">
       <div class="ai-title">
-        <h3>{{ stageLabel }} · AI 预审</h3>
+        <div class="ai-title-row">
+          <span class="ai-seal" :class="{ 'has-issues': majorIssues.length }">AI</span>
+          <h3>{{ stageLabel }} · AI 预审</h3>
+        </div>
         <p v-if="enabled">
           模型按评分细则给出参考意见，不改变流程；<b>是否通过仍由指导老师决定</b>。
         </p>
@@ -433,6 +436,43 @@ onBeforeUnmount(stopPolling)
   margin: 0;
   font-size: 15px;
   color: var(--th-primary-deep);
+}
+
+.ai-title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* 收起后整块只剩标题和一行摘要，靠这枚 AI 印章保持存在感 */
+.ai-seal {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-family: var(--th-font-serif);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #d9c08a;
+  background: linear-gradient(145deg, #24405f, #16283f);
+  border: 1px solid rgba(198, 168, 107, 0.55);
+  border-radius: 7px;
+  box-shadow: 0 2px 6px rgba(16, 31, 51, 0.18);
+}
+
+.ai-seal.has-issues::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  background: #a33c2a;
+  border: 1.5px solid var(--th-surface);
+  border-radius: 50%;
 }
 
 .ai-title p {
