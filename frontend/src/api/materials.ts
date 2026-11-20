@@ -29,6 +29,7 @@ export interface MaterialQuery {
   stage?: string
   keyword?: string
   student_id?: number
+  latest_only?: boolean
 }
 
 export interface UploadForm {

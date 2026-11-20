@@ -44,6 +44,7 @@ async def list_materials(
     stage: Annotated[Stage | None, Query()] = None,
     keyword: Annotated[str | None, Query(max_length=50)] = None,
     student_id: Annotated[int | None, Query()] = None,
+    latest_only: Annotated[bool, Query(description="只看每个学生每个环节的最终版本")] = False,
 ) -> ApiResponse[MaterialPage]:
     scope_teacher_id = actor.id if actor.role == Role.TEACHER.value else None
     scope_student_id: int | None = None
@@ -63,6 +64,7 @@ async def list_materials(
         student_id=student_id,
         stage=stage.value if stage else None,
         keyword=keyword,
+        latest_only=latest_only,
         page=page,
         size=size,
     )

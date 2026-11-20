@@ -15,7 +15,7 @@ const loading = ref(false)
 const items = ref<Material[]>([])
 const total = ref(0)
 
-const query = reactive({ page: 1, size: 10, keyword: '', stage: '' })
+const query = reactive({ page: 1, size: 10, keyword: '', stage: '', latestOnly: false })
 
 const stageOptions = STAGES.map((s) => ({ value: s.code, label: s.label }))
 const stageLabel = (code: string) => STAGES.find((s) => s.code === code)?.label ?? code
@@ -28,6 +28,7 @@ async function load() {
       size: query.size,
       keyword: query.keyword || undefined,
       stage: query.stage || undefined,
+      latest_only: query.latestOnly || undefined,
     })
     items.value = data.items
     total.value = data.total
@@ -44,6 +45,7 @@ function search() {
 function reset() {
   query.keyword = ''
   query.stage = ''
+  query.latestOnly = false
   search()
 }
 
@@ -73,12 +75,18 @@ onMounted(load)
         <p class="eyebrow">MATERIALS</p>
         <h2>{{ isAdmin ? '材料中心' : '学生材料' }}</h2>
         <p class="sub">
-          {{ isAdmin
-            ? '全部学生按环节提交的材料，同一环节多次提交会保留为不同版本。'
-            : '只显示你名下学生提交的材料，可下载查看每一版。' }}
+          {{ query.latestOnly
+            ? (isAdmin
+              ? '正在只看每个学生每个环节的最终版本；取消勾选可看全部历史版本。'
+              : '只显示你名下学生每个环节的最终版本；取消勾选可看全部历史版本。')
+            : (isAdmin
+              ? '全部学生按环节提交的材料，同一环节多次提交会保留为不同版本。'
+              : '只显示你名下学生提交的材料，可下载查看每一版。') }}
         </p>
       </div>
-      <span class="count">共 <b>{{ total }}</b> 份</span>
+      <span class="count">
+        共 <b>{{ total }}</b> 份{{ query.latestOnly ? '（各环节最终版）' : '' }}
+      </span>
     </header>
 
     <section class="toolbar">
@@ -94,6 +102,9 @@ onMounted(load)
       <el-select v-model="query.stage" class="tool-select" placeholder="全部环节" clearable @change="search">
         <el-option v-for="s in stageOptions" :key="s.value" :label="s.label" :value="s.value" />
       </el-select>
+      <el-checkbox v-model="query.latestOnly" class="tool-check" @change="search">
+        只看各环节最终版
+      </el-checkbox>
       <el-button :icon="Search" @click="search">查询</el-button>
       <el-button :icon="Refresh" plain @click="reset">重置</el-button>
     </section>
@@ -237,6 +248,11 @@ onMounted(load)
 
 .tool-select {
   width: 160px;
+}
+
+.tool-check {
+  margin-left: 2px;
+  font-size: 13px;
 }
 
 .table-wrap {

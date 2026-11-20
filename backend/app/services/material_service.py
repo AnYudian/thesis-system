@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import UploadFile
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -124,6 +124,7 @@ async def list_materials(
     student_id: int | None = None,
     stage: str | None = None,
     keyword: str | None = None,
+    latest_only: bool = False,
     page: int = 1,
     size: int = 20,
 ) -> tuple[list[MaterialOut], int]:
@@ -140,6 +141,23 @@ async def list_materials(
         like = f"%{keyword.strip()}%"
         conditions.append(
             or_(Student.name.ilike(like), Student.sno.ilike(like), Material.title.ilike(like))
+        )
+    if latest_only:
+        # 版本号按"学生 + 环节"各自从 1 累加（next_version），
+        # 所以取这三列的组合最大值就是每人每环节的最终版，不必再按文件名猜
+        latest = (
+            select(
+                Material.student_id.label("sid"),
+                Material.stage.label("stage"),
+                func.max(Material.version).label("max_version"),
+            )
+            .group_by(Material.student_id, Material.stage)
+            .subquery()
+        )
+        conditions.append(
+            tuple_(Material.student_id, Material.stage, Material.version).in_(
+                select(latest.c.sid, latest.c.stage, latest.c.max_version)
+            )
         )
 
     count_stmt = select(func.count()).select_from(Material).join(Student, Material.student_id == Student.id)
