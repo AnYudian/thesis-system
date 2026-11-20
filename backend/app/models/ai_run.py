@@ -53,6 +53,8 @@ class AiRun(Base, TimestampMixin):
     tokens_input: Mapped[int | None] = mapped_column(Integer)
     tokens_output: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    # 实际调用模型的次数：1 = 一次成功，>1 = 自动重试过；排查"为什么这次慢"时用
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
     # UPLOAD = 上传后自动触发；MANUAL = 教师/管理员点重跑
     trigger: Mapped[str] = mapped_column(String(16), nullable=False, default="UPLOAD")

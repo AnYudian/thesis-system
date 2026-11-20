@@ -8,6 +8,7 @@
   AI 挂掉绝不能影响学生正常提交材料。
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime
@@ -121,6 +122,39 @@ async def enqueue(
     return run
 
 
+_RETRY_DELAY_SECONDS = 2
+
+
+async def _call_with_retry(db, run: AiRun, provider, request, settings):
+    """调用模型，遇到"可能自己好"的错误自动重试。
+
+    重试次数与实时错误都落到这一行记录上：
+    - 重试成功：错误清空，attempts=2，界面能看出"这次重试过一次才成"；
+    - 重试失败：保留最后一次的原始错误，避免只看到"预审失败"却不知道为什么。
+    401/402 这类重试也没用的错误不消耗第二次请求，直接抛。
+    """
+    max_attempts = 1 + max(0, settings.ai_retry_times)
+    for attempt in range(1, max_attempts + 1):
+        run.attempts = attempt
+        try:
+            reply = await provider.review(request)
+        except AiError as exc:
+            if not exc.retryable or attempt >= max_attempts:
+                raise
+            run.error = f"第 {attempt} 次调用失败（{exc.message}），{_RETRY_DELAY_SECONDS} 秒后自动重试"
+            await db.commit()
+            logger.warning("AI 预审 run=%s 第 %s 次调用失败：%s", run.id, attempt, exc.message)
+            await asyncio.sleep(_RETRY_DELAY_SECONDS)
+            continue
+
+        if run.error:
+            run.error = None
+        return reply
+
+    # 循环里要么 return 要么 raise，这里只是让类型检查安心
+    raise AiError("模型调用失败")
+
+
 async def execute(run_id: int) -> None:
     """后台任务入口。自己开会话，自己收尾，绝不向外抛异常。"""
     settings = get_settings()
@@ -149,15 +183,14 @@ async def execute(run_id: int) -> None:
             run.provider = provider.name
             run.model = provider.model
 
-            reply = await provider.review(
-                ReviewRequest(
-                    text=text,
-                    stage=run.stage,
-                    title=material.title,
-                    material_version=run.material_version,
-                    truncated=truncated,
-                )
+            request = ReviewRequest(
+                text=text,
+                stage=run.stage,
+                title=material.title,
+                material_version=run.material_version,
+                truncated=truncated,
             )
+            reply = await _call_with_retry(db, run, provider, request, settings)
             result = normalize(reply.payload)
 
             run.status = AiRunStatus.DONE.value
@@ -173,7 +206,10 @@ async def execute(run_id: int) -> None:
             run.error = str(exc)
         except (AiError, AppError) as exc:
             run.status = AiRunStatus.FAILED.value
-            run.error = getattr(exc, "message", None) or str(exc)
+            message = getattr(exc, "message", None) or str(exc)
+            if (run.attempts or 1) > 1:
+                message = f"{message}（共尝试 {run.attempts} 次）"
+            run.error = message
         except Exception:
             # 未预期的错误也要落状态，否则前端会一直转圈
             logger.exception("AI 预审执行失败 run=%s", run_id)
@@ -262,6 +298,7 @@ def _to_out(row) -> AiRunOut:
         tokens_input=run.tokens_input,
         tokens_output=run.tokens_output,
         latency_ms=run.latency_ms,
+        attempts=run.attempts or 1,
         trigger=run.trigger,
         triggered_by_name=trigger_name,
         created_at=run.created_at,

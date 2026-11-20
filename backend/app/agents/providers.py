@@ -78,7 +78,11 @@ class MockProvider:
 
 
 class DeepSeekProvider:
-    """OpenAI 兼容接口。base_url / model / key 全部来自配置，方便换供应商。"""
+    """OpenAI 兼容接口。base_url / model / key 全部来自配置，方便换供应商。
+
+    这一层的职责只有两个：把请求发出去、把"哪些错误值得再试一次"标出来。
+    重试循环放在 ai_service，因为那里还要落库（记录本次是第几次尝试）。
+    """
 
     name = "deepseek"
 
@@ -97,18 +101,32 @@ class DeepSeekProvider:
             ],
             # 评分要稳定，不要发挥：温度调到接近 0
             "temperature": 0.2,
-            "max_tokens": 3000,
+            "max_tokens": self._settings.ai_max_tokens,
             "response_format": {"type": "json_object"},
         }
         data = await self._post(payload)
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise AiError("模型返回结构异常，缺少 choices", retryable=True)
+        choice = choices[0]
+        content = (choice.get("message") or {}).get("content") or ""
+
+        # 达到输出上限时 JSON 一定是半截的，直接判"可重试"，
+        # 让 ai_service 再要一次，而不是把 500 字半截 JSON 当结果存下来
+        if choice.get("finish_reason") == "length":
+            raise AiError("模型输出被截断（达到单次输出上限），请重试", retryable=True)
+        if not content.strip():
+            raise AiError("模型返回了空内容，请重试", retryable=True)
+
         try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError):
-            raise AiError("模型返回结构异常，缺少 choices") from None
+            parsed = parse_json(content)
+        except AiError as exc:
+            raise AiError(exc.message, retryable=True) from None
 
         usage = data.get("usage") or {}
         return ProviderReply(
-            payload=parse_json(content),
+            payload=parsed,
             raw=content,
             tokens_input=usage.get("prompt_tokens"),
             tokens_output=usage.get("completion_tokens"),
@@ -119,20 +137,32 @@ class DeepSeekProvider:
         url = f"{self._settings.ai_base_url.rstrip('/')}/chat/completions"
         timeout = httpx.Timeout(self._settings.ai_timeout_seconds, connect=10)
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            # 个别兼容实现不认 response_format，降级重试一次，别让整次预审白跑
-            if response.status_code == 400 and "response_format" in response.text:
-                payload = {k: v for k, v in payload.items() if k != "response_format"}
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(url, json=payload, headers=headers)
+                # 个别兼容实现不认 response_format，降级重试一次，别让整次预审白跑
+                if response.status_code == 400 and "response_format" in response.text:
+                    payload = {k: v for k, v in payload.items() if k != "response_format"}
+                    response = await client.post(url, json=payload, headers=headers)
+        except httpx.TimeoutException:
+            raise AiError(
+                f"模型接口超过 {self._settings.ai_timeout_seconds} 秒没有返回，稍后自动重试",
+                retryable=True,
+            ) from None
+        except httpx.HTTPError as exc:
+            # 断网 / DNS / TLS 这类问题重试一次通常能过，不值得直接判失败
+            raise AiError(f"连不上模型接口（{exc.__class__.__name__}），稍后自动重试", retryable=True) from None
 
         if response.status_code != 200:
-            raise AiError(self._explain(response))
+            raise AiError(
+                self._explain(response),
+                retryable=response.status_code == 429 or response.status_code >= 500,
+            )
 
         try:
             return response.json()
         except ValueError:
-            raise AiError("模型接口返回的不是 JSON") from None
+            raise AiError("模型接口返回的不是 JSON，稍后自动重试", retryable=True) from None
 
     @staticmethod
     def _explain(response: httpx.Response) -> str:
@@ -143,7 +173,9 @@ class DeepSeekProvider:
         if status == 402:
             return "模型账户余额不足，请充值后再试"
         if status == 429:
-            return "模型接口限流，请稍后重试"
+            return "模型接口限流，稍后自动重试"
+        if status >= 500:
+            return f"模型服务暂时不可用（{status}），稍后自动重试"
         return f"模型接口返回 {status}：{detail}"
 
 

@@ -49,6 +49,7 @@ export interface AiRun {
   tokens_input: number | null
   tokens_output: number | null
   latency_ms: number | null
+  attempts: number
   trigger: 'UPLOAD' | 'MANUAL'
   triggered_by_name: string | null
   created_at: string

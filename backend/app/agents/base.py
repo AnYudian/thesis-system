@@ -32,7 +32,17 @@ class ProviderReply:
 
 
 class AiError(RuntimeError):
-    """预审失败。message 会写进 ai_runs.error，前端直接展示给老师看。"""
+    """预审失败。message 会写进 ai_runs.error，前端直接展示给老师看。
+
+    retryable 区分"再试一次可能就好了"（超时、限流、输出被截断）
+    和"重试也没用"（key 无效、余额不足、材料格式不支持）：
+    前者由 ai_service 自动重试，后者直接落失败，省一次请求也省一次等待。
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.message = message
+        self.retryable = retryable
 
 
 class AiSkipped(RuntimeError):

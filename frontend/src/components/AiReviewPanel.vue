@@ -195,6 +195,7 @@ onBeforeUnmount(stopPolling)
           <p class="verdict-meta">
             第 {{ latest.material_version }} 版 · {{ formatTime(latest.finished_at || latest.created_at) }}
             · {{ triggerLabel(latest) }}
+            <template v-if="latest.attempts > 1"> · 第 {{ latest.attempts }} 次尝试</template>
             <template v-if="latest.latency_ms"> · 用时 {{ Math.round(latest.latency_ms / 1000) }} 秒</template>
             <template v-if="latest.tokens_output"> · 输出 {{ latest.tokens_output }} tokens</template>
           </p>

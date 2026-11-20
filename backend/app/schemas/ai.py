@@ -66,6 +66,7 @@ class AiRunOut(BaseModel):
     tokens_input: int | None = None
     tokens_output: int | None = None
     latency_ms: int | None = None
+    attempts: int = 1
 
     trigger: str
     triggered_by_name: str | None = None
