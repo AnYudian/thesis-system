@@ -44,6 +44,12 @@ const LEVELS: Record<AiIssueLevel, { label: string; tone: string }> = {
   INFO: { label: '提示', tone: 'info' },
 }
 
+// 同一条材料的多次重跑会并排出现，标清是谁触发的，老师才知道哪条是学生交完自动审的
+function triggerLabel(row: AiRun) {
+  if (row.trigger === 'UPLOAD') return '上传自动审'
+  return row.triggered_by_name ? `${row.triggered_by_name}重跑` : '人工重跑'
+}
+
 function scoreTone(score: number | null | undefined) {
   if (score === null || score === undefined) return 'muted'
   if (score >= 80) return 'good'
@@ -188,6 +194,7 @@ onBeforeUnmount(stopPolling)
           </div>
           <p class="verdict-meta">
             第 {{ latest.material_version }} 版 · {{ formatTime(latest.finished_at || latest.created_at) }}
+            · {{ triggerLabel(latest) }}
             <template v-if="latest.latency_ms"> · 用时 {{ Math.round(latest.latency_ms / 1000) }} 秒</template>
             <template v-if="latest.tokens_output"> · 输出 {{ latest.tokens_output }} tokens</template>
           </p>
@@ -233,6 +240,7 @@ onBeforeUnmount(stopPolling)
         <span class="history-ver">第 {{ row.material_version }} 版</span>
         <span class="history-status">{{ row.status_label }}</span>
         <span class="history-score">{{ row.score === null ? '—' : `${Math.round(row.score)} 分` }}</span>
+        <span class="history-source">{{ triggerLabel(row) }}</span>
         <span class="history-time">{{ formatTime(row.created_at) }}</span>
       </div>
     </div>
@@ -589,5 +597,14 @@ onBeforeUnmount(stopPolling)
 
 .history-time {
   margin-left: auto;
+}
+
+.history-source {
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #a29a8b;
+  background: rgba(29, 51, 84, 0.04);
+  border-radius: 2px;
 }
 </style>
