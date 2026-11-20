@@ -556,6 +556,11 @@ onMounted(async () => {
   gap: 0;
 }
 
+/* 学科流程条下面直接跟按钮，给一点呼吸空间，不然像贴着分割线 */
+.hero--plain .hero-btn {
+  margin-top: 20px;
+}
+
 /* 就业老师的说明块放在深色题头里，沿用左侧竖线的“提示条”样式 */
 .reviewer-box {
   margin-top: 22px;

@@ -79,6 +79,31 @@ onMounted(async () => {
         <span class="rb-meta">{{ latestReturn.reviewer_name || '指导教师' }} · {{ formatTime(latestReturn.created_at) }}</span>
       </section>
 
+      <section v-if="detail.teacher" class="panel contact-panel">
+        <header class="panel-head">
+          <h3>指导教师</h3>
+          <p>材料、进度或修改意见有问题时，可以直接联系导师</p>
+        </header>
+        <div class="contact-grid">
+          <div>
+            <span class="c-label">姓名 / 账号</span>
+            <strong>{{ detail.teacher.real_name || '—' }} · {{ detail.teacher.username }}</strong>
+          </div>
+          <div>
+            <span class="c-label">学院 / 专业</span>
+            <strong>{{ detail.teacher.college || '未填' }} · {{ detail.teacher.major || '未填' }}</strong>
+          </div>
+          <div>
+            <span class="c-label">手机号</span>
+            <strong>{{ detail.teacher.phone || '未填' }}</strong>
+          </div>
+          <div>
+            <span class="c-label">邮箱</span>
+            <strong>{{ detail.teacher.email || '未填' }}</strong>
+          </div>
+        </div>
+      </section>
+
       <section class="panel">
         <header class="panel-head">
           <h3>毕业设计进度</h3>
@@ -365,6 +390,40 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 600;
   color: #fbf6ea;
+}
+
+/* 导师联系方式：学生端才需要，白底卡片里用深色小标签，别沿用深色题头的浅色 */
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.contact-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.c-label {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--th-text-muted);
+}
+
+.contact-grid strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--th-primary-deep);
+}
+
+@media (max-width: 900px) {
+  .contact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .panel {

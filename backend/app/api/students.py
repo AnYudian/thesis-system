@@ -6,9 +6,11 @@
 - 学生：只能看自己
 """
 
+from io import BytesIO
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DBDep, require_role
 from app.core.exceptions import AppError
@@ -143,6 +145,55 @@ async def import_students_file(
     return ok(
         result,
         message=f"已导入 {result.created} 人" + (f"，跳过 {result.skipped} 行" if result.skipped else ""),
+    )
+
+
+@router.get("/import/template", summary="下载学生批量导入模板（仅管理员）")
+async def import_template(_: AdminUser) -> StreamingResponse:
+    """给管理员一份带表头与示例行的 .xlsx。
+
+    列顺序与 import_students 的解析保持一致，改列时两处必须同步；
+    说明放在第二个 Sheet，导入只读第一个 Sheet，不会把说明当成数据。
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "学生名单"
+
+    headers = ["学号", "姓名", "专业", "班级", "年级", "指导教师账号"]
+    sheet.append(headers)
+    sheet.append(["20220001", "张三", "软件工程", "软工2201", "2022", "teacher"])
+
+    for index, width in enumerate([16, 10, 18, 14, 10, 18], start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="F2EFE6")
+        cell.alignment = Alignment(horizontal="center")
+    sheet.freeze_panes = "A2"
+
+    notes = book.create_sheet("填写说明")
+    notes.column_dimensions["A"].width = 92
+    for line in [
+        "1. 第一行是表头，可保留也可删除；从第二行开始，每行填一个学生。",
+        "2. 列顺序固定：学号、姓名、专业、班级、年级、指导教师账号。",
+        "3. 学号 4-30 位，只能用字母、数字、下划线或横线；年级填入学年份，如 2022。",
+        "4. 指导教师账号填教师的登录账号（如 teacher），必须是指导教师身份且已启用。",
+        "5. 单次最多 500 行、文件不超过 5MB；名单内或库里已存在的学号会跳过并在结果里提示。",
+        "6. 示例行导入前请删除或替换成真实学生。",
+    ]:
+        notes.append([line])
+
+    buffer = BytesIO()
+    book.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="students_import_template.xlsx"'},
     )
 
 

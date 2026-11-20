@@ -9,7 +9,7 @@ import {
   type UploadFile,
   type UploadUserFile,
 } from 'element-plus'
-import { Plus, Refresh, Search, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { Download, Plus, Refresh, Search, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 
 import {
   studentsApi,
@@ -310,6 +310,10 @@ function onImportFileChange(file: UploadFile) {
   importFile.value = (file.raw as File) ?? null
 }
 
+async function downloadTemplate() {
+  await studentsApi.importTemplate()
+}
+
 async function submitImport() {
   if (importMode.value === 'excel') {
     if (!importFile.value) {
@@ -592,10 +596,13 @@ onMounted(async () => {
 
     <!-- 批量导入 -->
     <el-dialog v-model="importVisible" title="批量导入学生" width="660px" destroy-on-close>
-      <el-radio-group v-model="importMode" class="import-mode">
-        <el-radio-button value="text">粘贴文本 / CSV</el-radio-button>
-        <el-radio-button value="excel">上传 Excel</el-radio-button>
-      </el-radio-group>
+      <div class="import-top">
+        <el-radio-group v-model="importMode">
+          <el-radio-button value="text">粘贴文本 / CSV</el-radio-button>
+          <el-radio-button value="excel">上传 Excel</el-radio-button>
+        </el-radio-group>
+        <el-button link type="primary" :icon="Download" @click="downloadTemplate">下载模板</el-button>
+      </div>
 
       <p class="import-tip">
         一行一个学生，列顺序固定为
@@ -717,7 +724,11 @@ onMounted(async () => {
   color: var(--th-primary);
 }
 
-.import-mode {
+.import-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
 }
 

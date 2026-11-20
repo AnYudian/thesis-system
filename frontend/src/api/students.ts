@@ -109,6 +109,19 @@ export const studentsApi = {
     return data.data as ImportResult
   },
 
+  /** 模板下载同样要带 token，先取 blob 再触发保存 */
+  async importTemplate() {
+    const res = await http.get('/students/import/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '学生导入模板.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
   assignTeacher: (studentIds: number[], teacherId: number) =>
     post<{ updated: number; teacher_name: string }>('/students/assign-teacher', {
       student_ids: studentIds,

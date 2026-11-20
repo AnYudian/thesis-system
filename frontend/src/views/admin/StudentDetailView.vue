@@ -262,10 +262,11 @@ onMounted(loadAll)
         </div>
       </section>
 
-      <section class="panel teacher-panel">
+      <!-- 教师看自己的学生不需要再看到自己的联系方式；管理员核对指导记录时才需要 -->
+      <section v-if="!isTeacher" class="panel teacher-panel">
         <header class="panel-head">
           <h3>指导教师</h3>
-          <p>{{ isTeacher ? '学生和管理员需要时，可按这里的信息联系你' : '管理员核对指导记录时，需要能直接联系到导师' }}</p>
+          <p>管理员核对指导记录时，需要能直接联系到导师</p>
         </header>
         <div v-if="detail.teacher" class="teacher-grid">
           <div>

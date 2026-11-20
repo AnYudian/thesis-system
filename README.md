@@ -121,6 +121,7 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 | GET | `/api/users/teachers` | ADMIN | **指导教师**列表（指派导师用；就业老师不在其中） |
 | POST | `/api/students/import` | ADMIN | 批量导入学生：CSV 或 Excel 复制文本（制表符），6 列且指导教师必填，逐行校验并返回错误行 |
 | POST | `/api/students/import/file` | ADMIN | 上传 `.xlsx` 导入（≤5MB），列要求同上，Excel 里存成数字的学号也能识别 |
+| GET | `/api/students/import/template` | ADMIN | 下载学生导入模板（`.xlsx`：表头 + 示例行 + 「填写说明」Sheet） |
 | POST | `/api/students/assign-teacher` | ADMIN | 批量改派导师：`{student_ids, teacher_id}`，只改归属，不动材料与审核记录 |
 | GET | `/api/config` | 登录 | 系统参数：中期检查最少沟通次数、九环节截止日期（所有登录用户可读，教师端 / 学生端据此显示） |
 | PUT | `/api/config` | ADMIN | 保存系统参数；两项一起提交并写入操作日志（动作名 `CONFIG_UPDATE`） |
