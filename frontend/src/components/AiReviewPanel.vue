@@ -9,7 +9,7 @@
  * 结论永远只作参考，卡片底部固定写明"由指导老师决定"。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import { aiApi, type AiIssueLevel, type AiRun, type AiStatus } from '@/api/ai'
@@ -29,6 +29,15 @@ const mock = ref(false)
 const loading = ref(true)
 const rerunning = ref(false)
 const runs = ref<AiRun[]>([])
+
+// 卡片很长，允许收起；记在本地，下次打开还是上次的选择
+const COLLAPSE_KEY = 'ai-panel-collapsed'
+const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
+
+function toggleCollapse() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
+}
 const stageLabel = STAGES.find((s) => s.code === 'PROPOSAL')?.label ?? '开题报告'
 
 const latest = computed<AiRun | null>(() => runs.value[0] ?? null)
@@ -160,9 +169,26 @@ onBeforeUnmount(stopPolling)
         >
           重新预审
         </el-button>
+        <el-button link size="small" :icon="collapsed ? ArrowDown : ArrowUp" @click="toggleCollapse">
+          {{ collapsed ? '展开' : '收起' }}
+        </el-button>
       </div>
     </header>
 
+    <!-- 收起时只留一行结论，既不占版面，也不让人以为"没有 AI 结果" -->
+    <p v-if="collapsed" class="ai-collapsed-line">
+      <template v-if="!enabled">AI 预审已关闭 · 历史记录已收起</template>
+      <template v-else-if="running">正在审阅第 {{ latest?.material_version }} 版…</template>
+      <template v-else-if="!latest">还没有开题报告的预审记录</template>
+      <template v-else>
+        第 {{ latest.material_version }} 版 ·
+        {{ latest.score === null ? '—' : `${Math.round(latest.score)} 分` }}
+        <template v-if="majorIssues.length"> · <b class="sum-block">{{ majorIssues.length }} 条必改</b></template>
+        <template v-else-if="result"> · <b class="sum-pass">无必改项</b></template>
+      </template>
+    </p>
+
+    <div v-show="!collapsed">
     <p v-if="!enabled" class="ai-off-text">
       关闭期间材料照常提交、由指导老师人工审阅；重新开启后，新提交的开题报告会自动送审。
       以下是关闭前的记录，不会被删除。
@@ -267,6 +293,7 @@ onBeforeUnmount(stopPolling)
         <span class="history-time">{{ formatTime(row.created_at) }}</span>
       </div>
     </div>
+    </div>
   </section>
 </template>
 
@@ -295,6 +322,22 @@ onBeforeUnmount(stopPolling)
   font-size: 12px;
   line-height: 1.7;
   color: var(--th-text-muted);
+}
+
+.ai-collapsed-line {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+
+.sum-block {
+  font-weight: 600;
+  color: #8c3222;
+}
+
+.sum-pass {
+  font-weight: 600;
+  color: #3f7d5a;
 }
 
 /* 必改门禁：红 = 先改稿，绿 = 可以交老师 */
