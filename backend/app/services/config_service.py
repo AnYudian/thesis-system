@@ -178,7 +178,7 @@ async def set_ai_config(
         db,
         user_id=actor.id,
         action="AI_CONFIG",
-        target_type="config",
+        target_type="CONFIG",
         target_id=KEY_AI,
         detail=changes,
     )

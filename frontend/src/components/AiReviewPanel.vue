@@ -30,13 +30,20 @@ const loading = ref(true)
 const rerunning = ref(false)
 const runs = ref<AiRun[]>([])
 
-// 卡片很长，允许收起；记在本地，下次打开还是上次的选择
+// 卡片很长，默认收起；用户点开过一次就记住，下次进来保持展开
 const COLLAPSE_KEY = 'ai-panel-collapsed'
-const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
+const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) !== '0')
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
   localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
+}
+
+// 历史记录默认只列摘要，点开看那一版当时被判了什么，方便对比学生改了什么
+const openHistory = ref<number | null>(null)
+
+function toggleHistory(id: number) {
+  openHistory.value = openHistory.value === id ? null : id
 }
 const stageLabel = STAGES.find((s) => s.code === 'PROPOSAL')?.label ?? '开题报告'
 
@@ -94,7 +101,8 @@ async function loadRuns() {
   const data = await aiApi.runs({
     student_id: props.studentId,
     stage: 'PROPOSAL',
-    size: 3,
+    // 多取几条，保证前两版（含重跑）都能看到；接口上限 50，6 条够用
+    size: 6,
   })
   runs.value = data.items
 }
@@ -169,8 +177,17 @@ onBeforeUnmount(stopPolling)
         >
           重新预审
         </el-button>
-        <el-button link size="small" :icon="collapsed ? ArrowDown : ArrowUp" @click="toggleCollapse">
-          {{ collapsed ? '展开' : '收起' }}
+        <el-button
+          v-if="collapsed"
+          type="primary"
+          size="small"
+          :icon="ArrowDown"
+          @click="toggleCollapse"
+        >
+          展开 AI 意见
+        </el-button>
+        <el-button v-else link size="small" :icon="ArrowUp" @click="toggleCollapse">
+          收起
         </el-button>
       </div>
     </header>
@@ -284,13 +301,37 @@ onBeforeUnmount(stopPolling)
     </template>
 
     <div v-if="history.length" class="history">
-      <p class="section-label">更早的预审记录</p>
-      <div v-for="row in history" :key="row.id" class="history-row">
-        <span class="history-ver">第 {{ row.material_version }} 版</span>
-        <span class="history-status">{{ row.status_label }}</span>
-        <span class="history-score">{{ row.score === null ? '—' : `${Math.round(row.score)} 分` }}</span>
-        <span class="history-source">{{ triggerLabel(row) }}</span>
-        <span class="history-time">{{ formatTime(row.created_at) }}</span>
+      <p class="section-label">更早的预审记录（点开看当时判了什么）</p>
+      <div v-for="row in history" :key="row.id" class="history-item">
+        <button type="button" class="history-row" @click="toggleHistory(row.id)">
+          <span class="history-ver">第 {{ row.material_version }} 版</span>
+          <span class="history-status">{{ row.status_label }}</span>
+          <span class="history-score">{{ row.score === null ? '—' : `${Math.round(row.score)} 分` }}</span>
+          <span v-if="row.result" class="history-issues">
+            {{ row.result.issues.filter((i) => i.level === 'MAJOR').length }} 条必改
+          </span>
+          <span class="history-source">{{ triggerLabel(row) }}</span>
+          <span class="history-time">{{ formatTime(row.created_at) }}</span>
+          <el-icon class="history-caret">
+            <ArrowUp v-if="openHistory === row.id" />
+            <ArrowDown v-else />
+          </el-icon>
+        </button>
+        <div v-if="openHistory === row.id" class="history-detail">
+          <p v-if="row.result" class="history-summary">{{ row.result.summary }}</p>
+          <p v-else class="history-summary is-muted">{{ row.error || '这次没有留下详细意见' }}</p>
+          <template v-if="row.result?.issues.length">
+            <article v-for="(issue, index) in row.result.issues" :key="index" class="issue">
+              <div class="issue-head">
+                <span class="level" :class="LEVELS[issue.level].tone">{{ LEVELS[issue.level].label }}</span>
+                <span class="issue-title">{{ issue.title }}</span>
+              </div>
+              <blockquote v-if="issue.quote" class="issue-quote">{{ issue.quote }}</blockquote>
+              <p v-if="issue.suggestion" class="issue-suggestion">改法：{{ issue.suggestion }}</p>
+            </article>
+          </template>
+          <p v-else-if="row.result" class="history-summary is-muted">当时没有给出修改项。</p>
+        </div>
       </div>
     </div>
     </div>
@@ -708,10 +749,51 @@ onBeforeUnmount(stopPolling)
   display: flex;
   align-items: center;
   gap: 14px;
+  width: 100%;
   padding: 6px 0;
+  font: inherit;
   font-size: 11.5px;
   color: var(--th-text-muted);
+  text-align: left;
+  background: none;
+  border: 0;
   border-top: 1px dashed var(--th-border-soft);
+  cursor: pointer;
+}
+
+.history-row:hover {
+  color: var(--th-text);
+}
+
+.history-issues {
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #8c3222;
+  background: rgba(163, 60, 42, 0.07);
+  border-radius: 2px;
+}
+
+.history-caret {
+  flex: none;
+  font-size: 12px;
+  color: #a29a8b;
+}
+
+.history-detail {
+  padding: 4px 0 10px 12px;
+  border-left: 2px solid var(--th-border-soft);
+}
+
+.history-summary {
+  margin: 4px 0 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--th-text);
+}
+
+.history-summary.is-muted {
+  color: var(--th-text-muted);
 }
 
 .history-ver {
