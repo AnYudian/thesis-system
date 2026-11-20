@@ -81,6 +81,19 @@ export const guidanceApi = {
     return URL.createObjectURL(res.data as Blob)
   },
 
+  /** 压缩包 / 代码文件浏览器没法预览，直接按原文件名下载 */
+  async downloadEvidence(record: GuidanceRecord) {
+    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = record.evidence_name || `guidance-${record.id}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
   /** PDF 这类没法直接内嵌预览的，仍然新窗口打开 */
   async openEvidence(record: GuidanceRecord) {
     const url = await guidanceApi.evidenceUrl(record)

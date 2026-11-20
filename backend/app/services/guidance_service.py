@@ -5,7 +5,7 @@
 因为那属于流程规则，不属于记录维护。
 
 证据文件和阶段材料分开存（data/uploads/guidance/...），
-将来清理材料时不会把指导截图一起删掉。
+将来清理材料时不会把指导证据一起删掉。
 """
 
 from datetime import datetime
@@ -26,9 +26,33 @@ from app.models.user import User
 from app.schemas.guidance import GuidanceOut, GuidanceSummary
 from app.services import config_service
 
-EVIDENCE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
-_MAX_EVIDENCE_MB = 10
+# 证据不再只限截图：代码、压缩包、视频也能作为"这次确实沟通过"的凭据。
+# 按类型给不同上限：图片/PDF 小、压缩包中等、视频最大；
+# 文件一律存原名之外的 UUID + 原后缀，下载接口按附件返回，不 inline 渲染。
+EVIDENCE_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+EVIDENCE_DOC = {".pdf"}
+EVIDENCE_ARCHIVE = {".zip", ".rar", ".7z"}
+EVIDENCE_CODE = {
+    ".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".cs", ".go", ".rs",
+    ".php", ".sql", ".html", ".css", ".vue", ".json", ".md", ".txt", ".ipynb",
+}
+EVIDENCE_VIDEO = {".mp4", ".webm", ".mov", ".m4v"}
+EVIDENCE_EXT = (
+    EVIDENCE_IMAGE | EVIDENCE_DOC | EVIDENCE_ARCHIVE | EVIDENCE_CODE | EVIDENCE_VIDEO
+)
+
+_MAX_MB_DEFAULT = 10
+_MAX_MB_ARCHIVE = 30
+_MAX_MB_VIDEO = 100
 _CHUNK = 1024 * 1024
+
+
+def _max_mb(suffix: str) -> int:
+    if suffix in EVIDENCE_VIDEO:
+        return _MAX_MB_VIDEO
+    if suffix in EVIDENCE_ARCHIVE:
+        return _MAX_MB_ARCHIVE
+    return _MAX_MB_DEFAULT
 
 
 def _evidence_dir(student_id: int) -> Path:
@@ -44,17 +68,22 @@ def _abs_evidence(stored_path: str) -> Path:
 async def save_evidence(
     upload: UploadFile, student_id: int
 ) -> tuple[str, int, str, str]:
-    """流式写盘并限制大小，返回 (相对路径, 字节数, content_type, 原始文件名)。"""
+    """流式写盘并按类型限制大小，返回 (相对路径, 字节数, content_type, 原始文件名)。
+
+    流式写而不是一次读进内存：视频动辄几十 MB，整块读会顶高进程内存。
+    """
     suffix = Path(upload.filename or "").suffix.lower()
     if suffix not in EVIDENCE_EXT:
         raise AppError(
             42250,
-            "证据只支持图片（jpg / png / webp）或 PDF，请截图后上传",
+            "证据支持图片（jpg / png / webp / gif）、PDF、代码文件或压缩包（zip / rar / 7z）、"
+            "视频（mp4 / webm / mov）",
             http_status=422,
         )
 
     target = _evidence_dir(student_id) / f"{uuid4().hex}{suffix}"
-    limit = _MAX_EVIDENCE_MB * _CHUNK
+    max_mb = _max_mb(suffix)
+    limit = max_mb * _CHUNK
     size = 0
     try:
         with target.open("wb") as fh:
@@ -62,7 +91,7 @@ async def save_evidence(
                 size += len(chunk)
                 if size > limit:
                     raise AppError(
-                        42251, f"证据文件不能超过 {_MAX_EVIDENCE_MB}MB", http_status=413
+                        42251, f"证据文件不能超过 {max_mb}MB", http_status=413
                     )
                 fh.write(chunk)
         if size == 0:

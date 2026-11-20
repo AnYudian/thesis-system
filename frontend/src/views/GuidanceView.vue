@@ -107,6 +107,30 @@ function onFileChange(file: UploadFile) {
   evidenceFile.value = (file.raw as File) ?? null
 }
 
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i
+const IMAGE_EXT = /\.(jpg|jpeg|png|webp|gif)$/i
+const PDF_EXT = /\.pdf$/i
+const ARCHIVE_EXT = /\.(zip|rar|7z)$/i
+
+function evidenceLabel(row: GuidanceRecord) {
+  const name = row.evidence_name || ''
+  if (VIDEO_EXT.test(name)) return '查看视频'
+  if (IMAGE_EXT.test(name)) return '查看截图'
+  if (PDF_EXT.test(name)) return '查看 PDF'
+  if (ARCHIVE_EXT.test(name)) return '下载代码包'
+  return '下载代码'
+}
+
+/** 能预览的走新窗口，其余一律下载；后端也是 attachment，不会在浏览器里执行代码 */
+async function openEvidence(row: GuidanceRecord) {
+  const name = row.evidence_name || ''
+  if (IMAGE_EXT.test(name) || PDF_EXT.test(name) || VIDEO_EXT.test(name)) {
+    await guidanceApi.openEvidence(row)
+  } else {
+    await guidanceApi.downloadEvidence(row)
+  }
+}
+
 function openCreate() {
   form.studentId = query.studentId
   form.stage = query.stage || 'MIDTERM'
@@ -246,8 +270,8 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="证据" width="104">
           <template #default="{ row }">
-            <el-button v-if="row.evidence_name" link type="primary" @click="guidanceApi.openEvidence(row)">
-              查看截图
+            <el-button v-if="row.evidence_name" link type="primary" @click="openEvidence(row)">
+              {{ evidenceLabel(row) }}
             </el-button>
             <span v-else class="cell-sub">未上传</span>
           </template>
@@ -324,12 +348,14 @@ onMounted(async () => {
             v-model:file-list="fileList"
             :auto-upload="false"
             :limit="1"
-            accept=".jpg,.jpeg,.png,.webp,.pdf"
+            accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.zip,.rar,.7z,.py,.js,.ts,.java,.cpp,.c,.h,.cs,.go,.rs,.php,.sql,.html,.css,.vue,.json,.md,.txt,.ipynb,.mp4,.webm,.mov,.m4v"
             :on-change="onFileChange"
           >
-            <el-button :icon="UploadFilled">选择截图 / PDF</el-button>
+            <el-button :icon="UploadFilled">选择证据文件</el-button>
             <template #tip>
-              <div class="upload-tip">可选；支持 jpg / png / webp / pdf，10MB 以内</div>
+              <div class="upload-tip">
+                可选；图片 / PDF / 代码或压缩包 / 视频。视频 ≤100MB，压缩包 ≤30MB，其他 ≤10MB
+              </div>
             </template>
           </el-upload>
         </el-form-item>

@@ -123,7 +123,10 @@ async def create_record(
     stage: Annotated[Stage, Form()] = Stage.MIDTERM,
     method: Annotated[GuidanceMethod, Form()] = GuidanceMethod.MEET,
     happened_at: Annotated[str | None, Form(description="沟通时间，ISO 格式")] = None,
-    file: Annotated[UploadFile | None, File(description="证据截图或 PDF，10MB 以内")] = None,
+    file: Annotated[
+        UploadFile | None,
+        File(description="证据：图片 / PDF / 代码压缩包 / 视频；视频 100MB、压缩包 30MB、其他 10MB 以内"),
+    ] = None,
 ) -> ApiResponse[GuidanceOut]:
     student = await student_svc.get_student_or_404(db, student_id)
     _ensure_write(student, actor)

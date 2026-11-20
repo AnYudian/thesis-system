@@ -25,12 +25,27 @@ const backLabel = computed(() =>
   isTeacher.value ? '返回阶段审核' : fromReviews.value ? '返回阶段流转' : '返回学生与课题',
 )
 
+// 列表的筛选条件（环节 / 关键词 / 只看待审核 / 指导教师）跟着地址栏带过来，
+// 返回时原样带回去，老师看完一个学生不用重新筛
+function listQuery() {
+  const q: Record<string, string> = {}
+  for (const key of ['keyword', 'stage', 'teacher_id', 'todo']) {
+    const value = route.query[key]
+    if (typeof value === 'string' && value) q[key] = value
+  }
+  return q
+}
+
 function goBack() {
   if (isTeacher.value) {
-    router.push('/reviews')
+    router.push({ path: '/reviews', query: listQuery() })
     return
   }
-  router.push(fromReviews.value ? '/admin/reviews' : '/admin/students')
+  if (fromReviews.value) {
+    router.push({ path: '/admin/reviews', query: listQuery() })
+    return
+  }
+  router.push('/admin/students')
 }
 
 const loading = ref(true)
@@ -479,7 +494,14 @@ onMounted(loadAll)
             <template #default="{ row }">
               <span class="cell-main">
                 {{ row.title }}
-                <el-tag v-if="isNewMaterial(row)" class="tag-new" size="small" type="warning" effect="plain">
+                <el-tag
+                  v-if="isNewMaterial(row)"
+                  class="tag-new"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  title="按上传时间判定：晚于本环节最近一次通过 / 退回就算新提交。下载不会消除，审核或退回后才消失。"
+                >
                   新提交
                 </el-tag>
               </span>

@@ -28,6 +28,8 @@ export const ACTIONS: ActionMeta[] = [
   { value: 'TOPIC_DELETE', label: '清除课题', tone: 'bad' },
   { value: 'MATERIAL_UPLOAD', label: '上传材料', tone: 'ok' },
   { value: 'MATERIAL_DELETE', label: '删除材料', tone: 'bad' },
+  { value: 'GUIDANCE_CREATE', label: '指导登记', tone: 'ok' },
+  { value: 'GUIDANCE_DELETE', label: '删除指导', tone: 'bad' },
   { value: 'STAGE_APPROVE', label: '审核通过', tone: 'ok' },
   { value: 'STAGE_RETURN', label: '审核退回', tone: 'bad' },
   { value: 'REMIND', label: '催交材料', tone: 'warn' },
@@ -52,6 +54,9 @@ export const DETAIL_LABELS: Record<string, string> = {
   comment: '意见',
   version: '版本',
   material_id: '材料',
+  record_id: '记录',
+  has_evidence: '附证据',
+  method: '方式',
   username: '账号',
   is_active: '启用',
   was_active: '原状态',
@@ -59,4 +64,12 @@ export const DETAIL_LABELS: Record<string, string> = {
   created: '成功',
   skipped: '跳过',
   role: '角色',
+  enabled: '启用',
+  midterm_min_guidance: '中期最少指导次数',
+  stage_deadlines: '环节截止日期',
+}
+
+/** 枚举值也要翻译，否则详情里会冒出 MEET / true 这种英文 */
+export const DETAIL_VALUES: Record<string, Record<string, string>> = {
+  method: { MEET: '面谈', ONLINE: '线上' },
 }

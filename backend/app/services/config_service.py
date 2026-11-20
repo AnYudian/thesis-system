@@ -139,7 +139,7 @@ async def update_config(db: AsyncSession, actor: User, data: ConfigUpdate) -> Co
         db,
         user_id=actor.id,
         action="CONFIG_UPDATE",
-        target_type="config",
+        target_type="CONFIG",
         target_id=KEY_MIDTERM,
         detail={
             "midterm_min_guidance": data.midterm_min_guidance,

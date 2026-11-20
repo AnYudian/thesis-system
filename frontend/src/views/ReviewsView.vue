@@ -61,11 +61,14 @@ function canApprove(row: PendingItem) {
 }
 
 function openDetail(studentId: number) {
-  // 教师和学生详情在同一个路由族里，但从阶段审核点进去要能原路返回
+  // 教师和学生详情在同一个路由族里，但从阶段审核点进去要能原路返回，
+  // 而且返回时必须还原"刚才筛的环节/关键词/只看待审核"，
+  // 否则老师看完一个学生回来得重新筛一遍
+  const params = { ...route.query, from: 'reviews' }
   router.push(
     isAdmin.value
-      ? { path: `/admin/students/${studentId}`, query: { from: 'reviews' } }
-      : { path: `/students/${studentId}`, query: { from: 'reviews' } },
+      ? { path: `/admin/students/${studentId}`, query: params }
+      : { path: `/students/${studentId}`, query: params },
   )
 }
 
@@ -144,7 +147,27 @@ async function load() {
   }
 }
 
+// 列表的筛选条件同步进地址栏：点进详情再返回、或者刷新页面，
+// 都能回到刚才筛的那一批学生，老师不用重新筛一遍
+function filterQuery() {
+  const q: Record<string, string> = {}
+  if (query.keyword.trim()) q.keyword = query.keyword.trim()
+  if (query.stage) q.stage = query.stage
+  if (query.teacherId) q.teacher_id = String(query.teacherId)
+  if (onlyTodo.value) q.todo = '1'
+  return q
+}
+
+function syncUrl() {
+  const next = filterQuery()
+  const same =
+    Object.keys(next).length === Object.keys(route.query).length &&
+    Object.keys(next).every((k) => route.query[k] === next[k])
+  if (!same) router.replace({ path: route.path, query: next })
+}
+
 function search() {
+  syncUrl()
   load()
 }
 
@@ -153,6 +176,7 @@ function reset() {
   query.stage = ''
   query.teacherId = undefined
   onlyTodo.value = false
+  syncUrl()
   load()
 }
 
@@ -176,28 +200,38 @@ function rowClass({ row }: { row: PendingItem }) {
   return isNewSubmission(row) ? 'row-todo' : ''
 }
 
-// 教师工作台的环节卡片会带 ?stage= 过来，落地时直接筛好这一环；
-// 页面已打开时再点卡片也要跟着变，所以用 watch 而不是只在 onMounted 读一次
-function applyStageFromQuery() {
-  const stage = route.query.stage
-  query.stage = typeof stage === 'string' ? stage : ''
+// 进入页面（含从详情返回）时按地址栏还原筛选：环节、关键词、只看待审核都对得上。
+// 教师工作台的环节卡片也是带 ?stage= 过来，用的同一套逻辑
+function applyQuery() {
+  const q = route.query
+  query.keyword = typeof q.keyword === 'string' ? q.keyword : ''
+  query.stage = typeof q.stage === 'string' ? q.stage : ''
+  const teacherId = Number(q.teacher_id)
+  query.teacherId = Number.isFinite(teacherId) && teacherId > 0 ? teacherId : undefined
+  onlyTodo.value = q.todo === '1'
 }
 
 onMounted(async () => {
-  applyStageFromQuery()
+  applyQuery()
   await load()
   if (isAdmin.value) {
     teachers.value = await teachersApi.list().catch(() => [])
   }
 })
 
+// 页面已打开时再从工作台点别的环节卡片：值真的变了才重查，
+// 避免刚 syncUrl 写回去又触发一次重复请求
 watch(
   () => route.query.stage,
-  () => {
-    applyStageFromQuery()
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (next === query.stage) return
+    query.stage = next
     load()
   },
 )
+
+watch(onlyTodo, syncUrl)
 </script>
 
 <template>

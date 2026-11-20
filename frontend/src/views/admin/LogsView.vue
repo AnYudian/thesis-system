@@ -3,7 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
 import { logsApi, type AuditLog } from '@/api/logs'
-import { ACTION_META, ACTIONS, DETAIL_LABELS } from '@/constants/actions'
+import { ACTION_META, ACTIONS, DETAIL_LABELS, DETAIL_VALUES } from '@/constants/actions'
 import { STAGE_SHORT } from '@/constants/stages'
 import { formatTime } from '@/utils/format'
 
@@ -19,6 +19,8 @@ const targetLabels: Record<string, string> = {
   USER: '账号',
   STUDENT: '学生',
   MATERIAL: '材料',
+  CONFIG: '参数',
+  config: '参数',
 }
 
 function actionLabel(action: string) {
@@ -43,8 +45,15 @@ function detailText(log: AuditLog) {
         text = value.join(' / ')
       } else if (typeof value === 'boolean') {
         text = value ? '是' : '否'
+      } else if (value && typeof value === 'object') {
+        // 环节截止日期是 { 环节: 日期 }，直接 String() 会变成 [object Object]；
+        // 只列真正设了日期的环节，否则一行里会挤满"未设置"
+        const days = Object.entries(value as Record<string, string | null>).filter(([, day]) => day)
+        text = days.length
+          ? days.map(([stage, day]) => `${STAGE_SHORT[stage] ?? stage} ${day}`).join(' / ')
+          : '未设置'
       } else {
-        text = String(value)
+        text = DETAIL_VALUES[key]?.[String(value)] ?? String(value)
       }
       return `${label} ${text}`
     })
@@ -136,7 +145,9 @@ onMounted(load)
           <template #default="{ row }">
             <span v-if="row.target_type" class="target">
               {{ targetLabels[row.target_type] || row.target_type }}
-              <em v-if="row.target_id">#{{ row.target_id }}</em>
+              <em v-if="row.target_id && row.target_type !== 'config' && row.target_type !== 'CONFIG'">
+                #{{ row.target_id }}
+              </em>
             </span>
             <span v-else class="muted">—</span>
           </template>
