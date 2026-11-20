@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, genFileId, type UploadFile, type UploadInstance, type UploadRawFile } from 'element-plus'
 import { Download, UploadFilled } from '@element-plus/icons-vue'
 
@@ -19,6 +19,7 @@ const items = ref<Material[]>([])
 const total = ref(0)
 
 const uploadRef = ref<UploadInstance>()
+const aiPanel = ref<InstanceType<typeof AiReviewPanel> | null>(null)
 const pickedFile = ref<File | null>(null)
 const pickedName = ref('')
 
@@ -82,19 +83,32 @@ async function submit() {
     return
   }
   uploading.value = true
+  const stage = form.stage
   try {
     const item = await materialsApi.upload(pickedFile.value, {
       stage: form.stage,
       title: form.title.trim(),
       note: form.note.trim() || null,
     })
-    ElMessage.success(`上传成功，当前为第 ${item.version} 版`)
+    // 开题报告会被自动送去 AI 预审，明确告诉学生"交了、正在看"，
+    // 否则上传成功的提示一闪而过，学生以为没交上去
+    const aiPending = stage === 'PROPOSAL'
+    ElMessage.success(
+      aiPending
+        ? `已上传第 ${item.version} 版，AI 正在预审开题报告，几秒后下方会出意见`
+        : `上传成功，当前为第 ${item.version} 版`,
+    )
     form.title = ''
     form.note = ''
     pickedFile.value = null
     pickedName.value = ''
     resetPicker()
     await load()
+    if (aiPending) {
+      await nextTick()
+      aiPanel.value?.refresh()
+      ;(aiPanel.value?.$el as HTMLElement | undefined)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   } finally {
     uploading.value = false
   }
@@ -210,7 +224,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <AiReviewPanel />
+    <AiReviewPanel ref="aiPanel" />
 
     <section class="panel">
       <div class="panel-title">

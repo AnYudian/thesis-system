@@ -98,6 +98,17 @@ async function init() {
   }
 }
 
+// 上传成功后由父组件调用：立刻查一次并把轮询次数清零，
+// 否则学生刚交完材料，卡片还停在"没提交"的旧状态，看起来像没反应
+async function refresh() {
+  if (!enabled.value) return
+  attempts = 0
+  await loadRuns()
+  schedulePoll()
+}
+
+defineExpose({ refresh })
+
 async function rerun() {
   if (!latest.value) return
   rerunning.value = true
@@ -150,7 +161,7 @@ onBeforeUnmount(stopPolling)
       <span class="pulse" />
       <div>
         <p class="run-title">正在审阅第 {{ latest.material_version }} 版…</p>
-        <p class="run-sub">通常需要 10-30 秒，可以先去处理别的学生，稍后刷新本页。</p>
+        <p class="run-sub">通常需要 10-30 秒，结果出来后会自动刷新，不用手动刷新页面。</p>
       </div>
     </div>
 
