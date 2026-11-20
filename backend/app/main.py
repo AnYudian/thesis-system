@@ -44,7 +44,7 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     if settings.ai_enabled:
         logger.info(
-            "AI 预审默认启用：provider=%s model=%s key=%s 每日上限=%s（管理员可在参数配置页临时关闭）",
+            "AI 预审默认启用：provider=%s model=%s key=%s 默认每日上限=%s（管理员可在参数配置页改）",
             settings.ai_provider,
             settings.ai_model,
             _mask(settings.ai_api_key),

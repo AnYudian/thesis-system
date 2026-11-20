@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     ai_retry_times: int = 1
     # 单次输出上限。开题报告 7 个维度 + 问题清单约 2500-3000 tokens，
     # 留在 4000 是为了不被截断；真被截断会判定为可重试错误
-    ai_max_tokens: int = 4000
+    ai_max_tokens: int = 6000
     # 每天最多自动跑多少次，防止误点或反复重跑烧 key；0 表示不限制
     ai_daily_limit: int = 30
     # 送入模型的正文字数上限：开题报告一般不够这个数，超出只截断并提示

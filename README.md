@@ -136,7 +136,7 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 | POST | `/api/students/assign-teacher` | ADMIN | 批量改派导师：`{student_ids, teacher_id}`，只改归属，不动材料与审核记录 |
 | GET | `/api/config` | 登录 | 系统参数：中期检查最少沟通次数、九环节截止日期（所有登录用户可读，教师端 / 学生端据此显示） |
 | PUT | `/api/config` | ADMIN | 保存系统参数；两项一起提交并写入操作日志（动作名 `CONFIG_UPDATE`） |
-| PUT | `/api/config/ai` | ADMIN | 开启 / 关闭 AI 预审（`{enabled}`），写入 `system_settings` 并记 `AI_TOGGLE`；立即生效，不用重启 |
+| PUT | `/api/config/ai` | ADMIN | 调整 AI 预审：`{enabled?, daily_limit?}`，两项都可选、只改传进来的；`daily_limit` 0 表示不限，上限 200；写入 `system_settings` 并记 `AI_CONFIG`；立即生效，不用重启 |
 | GET | `/api/logs` | ADMIN | 操作日志：登录、账号、建档、课题、材料、审核，支持动作 / 关键词筛选 |
 | GET | `/api/materials` | 登录 | 材料列表；学生只看自己，教师只看名下，管理员看全部；`latest_only=true` 只看每个学生每个环节的最终版本 |
 | POST | `/api/materials` | STUDENT / ADMIN | multipart 上传，同一环节自动递增版本（管理员需带 `student_id`） |
@@ -183,8 +183,8 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 - [x] **P6.17 材料只看最终版**：学生材料 / 材料中心工具栏新增「只看各环节最终版」勾选，勾上后每人每环节只显示版本号最高的那份（后端按 `(student_id, stage)` 取 `max(version)`，走 SQL 而不是前端过滤，分页和总数都准）；表头份数与说明文案跟着变，取消勾选恢复全部历史版本
 - [x] **P6.18 界面收尾与日志可读性**：教师端学生详情隐藏导师联系方式（老师看自己的学生不需要自己的电话邮箱），学生端补上导师联系卡片；学生导入支持下载 Excel 模板（含表头与一行示例）；阶段审核的筛选条件（环节 / 关键词 / 只看待审核 / 指导教师）同步进地址栏，从详情返回时原样带回；中期指导证据从「只收图片 / PDF」放开为图片、PDF、代码文件或压缩包、视频（视频 ≤100MB、压缩包 ≤30MB、其他 ≤10MB），按扩展名显示「查看截图 / 查看 PDF / 查看视频 / 下载代码包 / 下载代码」；操作日志补齐「指导登记 / 删除指导」动作名，沟通方式、启用状态、环节截止日期一并翻译，参数类日志不再显示 `#midterm_min_guidance` 这类内部键；「新提交」标签加悬停说明（按上传时间判定，下载不消除）
 - [x] **P7.1 AI 预审骨架（mock 全链路）**：新增 `ai_runs` 表与 `agents/` 分层（prompt 模板 / 文本抽取 / 供应商）；学生上传开题报告后由 `BackgroundTasks` 自动预审，`ai_service` 负责排队、执行、落库与失败兜底；mock 供应商返回结构完整的假评阅（1.2 秒、分数稳定可复现），真实模型只需把 `AI_PROVIDER` 改成 `deepseek`；三角色只读可见（教师 / 管理员另有「重新预审」），学生不能主动触发；每日额度与总开关（`AI_ENABLED`）都在配置里；服务重启时把中断的 RUNNING 记录标记为失败，避免界面永远转圈
-- [x] **P7.2 真实模型接入**：`.env` 切 `AI_PROVIDER=deepseek`（OpenAI 兼容接口，`deepseek-flash`）；真实开题报告实测约 20 秒出结果，7 个维度 + 8 条带原文引用与改法的问题；失败自动重试一次（超时 / 限流 / 5xx / 输出截断 / 连不上），401 与 402 这类重试无用的错误不浪费第二次请求；`ai_runs.attempts` 记录实际调用次数；`AI_MAX_TOKENS` 提到 4000，并在 `finish_reason=length` 时判为可重试，避免把半截 JSON 当结果存下来
-- [x] **P7.3 AI 门禁与运行时开关**：AI 判出「必改」的学生先改稿重交，重审无必改后才计入老师待审核（列表标「AI 待改」并置底，不计入待审核份数）；管理员在「参数配置」页可随时开关 AI，写入 `system_settings` 立即生效、无需重启；教师端、学生端新增 AI 状态条（开 / 关、真实模型或演示模式、今日用量），详情页关闭时显示安静提示；`/docs` 补 AI 分组说明、字段描述与真实示例
+- [x] **P7.2 真实模型接入**：`.env` 切 `AI_PROVIDER=deepseek`（OpenAI 兼容接口，`deepseek-flash`）；真实开题报告实测约 20 秒出结果，7 个维度 + 8 条带原文引用与改法的问题；失败自动重试一次（超时 / 限流 / 5xx / 输出截断 / 连不上），401 与 402 这类重试无用的错误不浪费第二次请求；`ai_runs.attempts` 记录实际调用次数；`AI_MAX_TOKENS` 提到 6000，并在 `finish_reason=length` 时判为可重试，避免把半截 JSON 当结果存下来
+- [x] **P7.3 AI 门禁与运行时开关**：AI 判出「必改」的学生先改稿重交，重审无必改后才计入老师待审核（列表标「AI 待改」并置底，不计入待审核份数）；管理员在「参数配置」页可随时开关 AI，写入 `system_settings` 立即生效、无需重启；教师端、学生端新增 AI 状态条（开 / 关、真实模型或演示模式、今日用量），详情页关闭时显示安静提示；`/docs` 补 AI 分组说明、字段描述与真实示例；同轮修正：工作台九宫格与阶段审核页统一口径（有必改项不计待审，另标「N 人 AI 待改」）；关闭 AI 后历史记录与分数仍可查看；每日上限改为管理员可调（0=不限）；学生材料页顶部新增 AI 结论条（有必改可一键跳到清单）；`AI_MAX_TOKENS` 提到 6000，避免长报告被截断
 - [ ] **P7.4 建议落地到审核**：教师「采纳 AI 建议并带入退回理由」、AI 与人工结论的对比视图
 - [ ] **P7.5 统计与导出**：AI 维度得分进统计报表与 Excel / PDF 导出
 - [ ] **P7.6 扩展到其他环节**：中期检查、查重、定稿的 rubric 与材料类型
@@ -214,11 +214,11 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 - AI 开关存在 `system_settings` 的 `ai_enabled`：库里没有记录时跟随 `.env` 的 `AI_ENABLED`，管理员在「参数配置」页切换后立即生效，不用改环境变量也不用重启；关闭只是不再新建预审，历史记录、分数和状态条仍然可查。
 - `/docs` 里的「Example Value」是 schema 的示例值（我们把它写成了真实配置的形状），**不是**当前状态；要看真实值请点 Try it out，或用 `GET /api/ai/status`。
 - 模型调用会自动重试（`AI_RETRY_TIMES`，默认 1 次），只针对"再试一次可能就好"的错误：超时、429 限流、5xx、输出被截断、连不上接口。重试成功时 `attempts=2` 且错误清空（界面显示"第 2 次尝试"）；仍失败则保留最后一次原因并注明"共尝试 N 次"。key 无效（401）、余额不足（402）不重试，直接告诉老师怎么处理。
-- 单次输出上限 `AI_MAX_TOKENS`（默认 4000）。一份开题报告正常输出 2500-3600 tokens，接近上限；接口返回 `finish_reason=length` 时说明 JSON 已经是半截的，这里主动判失败并重试，不会把它解析成"0 分"存进库。
-- 演示或断网环境把 `AI_PROVIDER` 改回 `mock` 就能离线跑；真实模式下每份报告约 1800 输入 + 3600 输出 tokens（一次几分钱），`AI_DAILY_LIMIT` 兜底，`AI_ENABLED=false` 直接关掉整块。
+- 单次输出上限 `AI_MAX_TOKENS`（默认 6000）。一份开题报告正常输出 2500-4800 tokens，篇幅长的报告 4000 不够用（被 `finish_reason=length` 截断），所以留了余量；接口返回 `finish_reason=length` 时说明 JSON 已经是半截的，这里主动判失败并重试，不会把它解析成"0 分"存进库。
+- 演示或断网环境把 `AI_PROVIDER` 改回 `mock` 就能离线跑；真实模式下每份报告约 1800 输入 + 3600 输出 tokens（一次几分钱），`AI_DAILY_LIMIT` 兜底；这两项都只是 `.env` 的默认值，实际以管理员在「参数配置」页保存的值（`system_settings`）为准。
 - 预审只接**开题报告**（`ai_service.SUPPORTED_STAGES`），其余环节上传不解发预审；PDF / DOCX 可直接抽文本（DOCX 用标准库 zipfile + ElementTree 解析，不引新依赖），`.doc`、图片、压缩包和扫描件（可读字数 < 80）会落 `SKIPPED` 并给出人话原因，不占用额度。
 - 每条预审都落 `provider` / `model` / `prompt_version` / `raw_response`，改 prompt 后旧记录仍可解释；prompt 放在 `backend/app/agents/prompts/proposal_v1.md`，改版就新增 `proposal_v2.md` 并升 `PROMPT_VERSION`，不覆盖历史。
-- 额度与开关：`AI_ENABLED=false` 整块关闭（接口返回 enabled=false，前端不渲染 AI 卡片）；`AI_DAILY_LIMIT` 只统计今天成功入队的次数，学生上传触发的与教师重跑的都算。
+- 额度与开关：AI 开关关闭后不再自动审新提交（接口返回 enabled=false，前端显示「已关闭」但仍可查看历史记录）；`AI_DAILY_LIMIT` 只统计今天成功入队的次数，学生上传触发的与教师重跑的都算，0 表示不限。
 - API Key 只放 `.env`（已被 git 忽略），`/api/ai/status` 只回 `has_key` 布尔值，日志里打印掩码；交付 / 部署时用环境变量注入，打包用 `git archive`，不要把 `.env` 打进压缩包。
 - 数据库变更一律走 Alembic，不用 ORM 自动建表。
 - 主题色与字体集中在 `frontend/src/styles/theme.css`，组件内只引用变量。

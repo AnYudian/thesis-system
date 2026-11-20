@@ -67,13 +67,14 @@ async def used_today(db: AsyncSession) -> int:
 
 async def status(db: AsyncSession) -> AiStatusOut:
     settings = get_settings()
+    enabled, daily_limit = await config_service.get_ai_settings(db)
     return AiStatusOut(
-        enabled=await config_service.get_ai_enabled(db),
+        enabled=enabled,
         provider=settings.ai_provider,
         model=settings.ai_model,
         mock=(settings.ai_provider or "mock").lower() == "mock",
         has_key=bool(settings.ai_api_key),
-        daily_limit=settings.ai_daily_limit,
+        daily_limit=daily_limit,
         used_today=await used_today(db),
         stages=[stage.value for stage in SUPPORTED_STAGES],
     )
@@ -91,13 +92,14 @@ async def enqueue(
 ) -> AiRun | None:
     """建一条待审记录。返回 None 表示这次不需要跑（未启用 / 环节未接入 / 超额）。"""
     settings = get_settings()
-    if not await config_service.get_ai_enabled(db):
+    enabled, daily_limit = await config_service.get_ai_settings(db)
+    if not enabled:
         return None
     if material.stage not in _SUPPORTED_VALUES:
         return None
-    if settings.ai_daily_limit and await used_today(db) >= settings.ai_daily_limit:
+    if daily_limit and await used_today(db) >= daily_limit:
         # 上传时静默跳过：学生已经提交成功，不该因为额度提示而以为上传失败
-        logger.info("AI 预审已达当日上限 %s，材料 %s 跳过", settings.ai_daily_limit, material.id)
+        logger.info("AI 预审已达当日上限 %s，材料 %s 跳过", daily_limit, material.id)
         return None
 
     run = AiRun(

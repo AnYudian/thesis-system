@@ -96,10 +96,9 @@ async function init() {
     const status: AiStatus = await aiApi.status()
     enabled.value = status.enabled
     mock.value = status.mock
-    if (enabled.value) {
-      await loadRuns()
-      schedulePoll()
-    }
+    // 关闭后也要拉历史：开关只控制"是否自动审新提交"，不隐藏已有结论
+    await loadRuns()
+    schedulePoll()
   } finally {
     loading.value = false
   }
@@ -135,31 +134,24 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <section v-if="!loading && !enabled" class="ai-panel ai-panel--off">
+  <section v-loading="loading" class="ai-panel" :class="{ 'ai-panel--off': !enabled }">
     <header class="ai-head">
       <div class="ai-title">
         <h3>{{ stageLabel }} · AI 预审</h3>
-        <p>管理员在「参数配置」里关闭了 AI 预审，材料仍可正常提交与审核。</p>
-      </div>
-    </header>
-    <p class="ai-off-text">
-      当前由指导老师人工审阅；重新开启后，新提交的开题报告会自动送审，历史记录不会被删除。
-    </p>
-  </section>
-
-  <section v-else-if="enabled" v-loading="loading" class="ai-panel">
-    <header class="ai-head">
-      <div class="ai-title">
-        <h3>{{ stageLabel }} · AI 预审</h3>
-        <p>
+        <p v-if="enabled">
           模型按评分细则给出参考意见，不改变流程；<b>是否通过仍由指导老师决定</b>。
+        </p>
+        <p v-else>
+          管理员在「参数配置」里关闭了 AI 预审，新材料不再自动送审；
+          <b>已有记录与分数仍可查看</b>。
         </p>
       </div>
       <div class="ai-tools">
-        <span v-if="mock" class="tag tag-mock">演示模式</span>
+        <span v-if="!enabled" class="tag tag-off">已关闭</span>
+        <span v-if="enabled && mock" class="tag tag-mock">演示模式</span>
         <span v-if="latest" class="ai-model">{{ latest.model }}</span>
         <el-button
-          v-if="canRerun && latest && !running"
+          v-if="enabled && canRerun && latest && !running"
           :icon="Refresh"
           size="small"
           plain
@@ -171,8 +163,14 @@ onBeforeUnmount(stopPolling)
       </div>
     </header>
 
+    <p v-if="!enabled" class="ai-off-text">
+      关闭期间材料照常提交、由指导老师人工审阅；重新开启后，新提交的开题报告会自动送审。
+      以下是关闭前的记录，不会被删除。
+    </p>
+
     <div v-if="!latest" class="ai-empty">
-      <p v-if="canRerun">学生还没有提交开题报告的 PDF / DOCX，提交后会自动生成 AI 意见。</p>
+      <p v-if="!enabled">这段时间还没有 AI 预审记录。</p>
+      <p v-else-if="canRerun">学生还没有提交开题报告的 PDF / DOCX，提交后会自动生成 AI 意见。</p>
       <p v-else>上传开题报告后，系统会自动生成 AI 修改建议，可先自行对照修改。</p>
     </div>
 
@@ -386,6 +384,12 @@ onBeforeUnmount(stopPolling)
   color: #8a6a2f;
   background: rgba(198, 168, 107, 0.16);
   border: 1px solid rgba(198, 168, 107, 0.5);
+}
+
+.tag-off {
+  color: var(--th-text-muted);
+  background: rgba(29, 51, 84, 0.05);
+  border: 1px solid var(--th-border);
 }
 
 .ai-empty {

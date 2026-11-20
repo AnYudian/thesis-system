@@ -11,7 +11,6 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Query
 
 from app.api.deps import CurrentUser, DBDep
-from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.response import ApiResponse, ok
 from app.models.enums import Role, Stage
@@ -103,15 +102,15 @@ async def create_run(
     if actor.role == Role.TEACHER.value and student.teacher_id != actor.id:
         raise AppError(40310, "只能对自己名下的学生发起预审", http_status=403)
 
-    settings = get_settings()
-    if not await config_service.get_ai_enabled(db):
+    enabled, daily_limit = await config_service.get_ai_settings(db)
+    if not enabled:
         raise AppError(42230, "AI 预审未启用，请联系管理员在参数配置里打开", http_status=422)
     if not ai_service.supports_stage(material.stage):
         raise AppError(42231, "当前只接入了开题报告的 AI 预审", http_status=422)
-    if settings.ai_daily_limit and await ai_service.used_today(db) >= settings.ai_daily_limit:
+    if daily_limit and await ai_service.used_today(db) >= daily_limit:
         raise AppError(
             42910,
-            f"今日 AI 预审次数已达上限（{settings.ai_daily_limit} 次），请明天再试",
+            f"今日 AI 预审次数已达上限（{daily_limit} 次），请明天再试",
             http_status=429,
         )
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, genFileId, type UploadFile, type UploadInstance, type UploadRawFile } from 'element-plus'
 import { Download, UploadFilled } from '@element-plus/icons-vue'
 
 import ReminderBanner from '@/components/ReminderBanner.vue'
 import AiReviewPanel from '@/components/AiReviewPanel.vue'
 import AiStatusBar from '@/components/AiStatusBar.vue'
+import { aiApi } from '@/api/ai'
 import { materialsApi, type Material } from '@/api/materials'
 import { studentsApi } from '@/api/students'
 import { STAGES } from '@/constants/stages'
@@ -23,6 +24,48 @@ const uploadRef = ref<UploadInstance>()
 const aiPanel = ref<InstanceType<typeof AiReviewPanel> | null>(null)
 const pickedFile = ref<File | null>(null)
 const pickedName = ref('')
+
+// 开题报告的 AI 结论提到页面顶部：AI 卡片在材料表下方，
+// 学生传完不往下滚就以为"系统没反应"，所以顶部单独给一条结论。
+type Gate = { major: number; score: number; version: number }
+const gate = ref<Gate | null>(null)
+let gateTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadGate(): Promise<string | null> {
+  try {
+    const data = await aiApi.runs({ stage: 'PROPOSAL', size: 1 })
+    const row = data.items[0]
+    if (!row || row.status !== 'DONE' || !row.result) {
+      gate.value = null
+      return row?.status ?? null
+    }
+    gate.value = {
+      major: row.result.issues.filter((i) => i.level === 'MAJOR').length,
+      score: Math.round(row.score ?? row.result.score),
+      version: row.material_version,
+    }
+    return row.status
+  } catch {
+    gate.value = null
+    return null
+  }
+}
+
+// 结果通常 10-30 秒出来：隔 3 秒看一眼，出结果或失败就停，避免一直轮询
+async function pollGate(remaining = 12) {
+  if (gateTimer) clearTimeout(gateTimer)
+  const status = await loadGate()
+  if ((status === 'QUEUED' || status === 'RUNNING') && remaining > 0) {
+    gateTimer = setTimeout(() => pollGate(remaining - 1), 3000)
+  }
+}
+
+function scrollToAi() {
+  ;(aiPanel.value?.$el as HTMLElement | undefined)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  })
+}
 
 const form = reactive({ stage: 'TOPIC', title: '', note: '' })
 
@@ -108,7 +151,8 @@ async function submit() {
     if (aiPending) {
       await nextTick()
       aiPanel.value?.refresh()
-      ;(aiPanel.value?.$el as HTMLElement | undefined)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      void pollGate()
+      scrollToAi()
     }
   } finally {
     uploading.value = false
@@ -142,6 +186,12 @@ onMounted(async () => {
     // 没有档案也不影响看历史材料
   }
   await Promise.all([load(), configStore.load()])
+  // 打开页面时若 AI 正在审，顶部结论也要跟着刷新
+  void pollGate(6)
+})
+
+onBeforeUnmount(() => {
+  if (gateTimer) clearTimeout(gateTimer)
 })
 </script>
 
@@ -157,6 +207,22 @@ onMounted(async () => {
     </header>
 
     <AiStatusBar />
+
+    <section v-if="gate" class="ai-gate-banner" :class="gate.major ? 'is-block' : 'is-pass'">
+      <div class="gb-text">
+        <strong v-if="gate.major">
+          AI 预审发现 {{ gate.major }} 条必改项（第 {{ gate.version }} 版 · {{ gate.score }} 分）
+        </strong>
+        <strong v-else>
+          AI 预审没有必改项（第 {{ gate.version }} 版 · {{ gate.score }} 分），可以等老师审核
+        </strong>
+        <span v-if="gate.major">
+          按清单改完后重新上传，系统会自动再审；改完之前不会进入老师待审队列。
+        </span>
+        <span v-else>老师仍可提出修改意见，最终以老师结论为准。</span>
+      </div>
+      <el-button size="small" text @click="scrollToAi">查看 AI 意见 ↓</el-button>
+    </section>
 
     <ReminderBanner />
 
@@ -284,6 +350,47 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 顶部 AI 结论条：红=有必改，绿=可交老师；和下方卡片用同一套颜色 */
+.ai-gate-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 16px;
+  background: rgba(245, 239, 225, 0.6);
+  border: 1px solid var(--th-border);
+  border-left: 3px solid #3f7d5a;
+  border-radius: 5px;
+}
+
+.ai-gate-banner.is-block {
+  background: rgba(163, 60, 42, 0.05);
+  border-left-color: #a33c2a;
+}
+
+.gb-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gb-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2f6b4f;
+}
+
+.is-block .gb-text strong {
+  color: #8c3222;
+}
+
+.gb-text span {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--th-text-muted);
+}
+
 .deadline-banner {
   display: flex;
   align-items: center;
