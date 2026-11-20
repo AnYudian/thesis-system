@@ -7,7 +7,7 @@ result 里的结构是"给前端直接渲染"的形状，所以在这里就定�
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import Stage
 
@@ -83,16 +83,35 @@ class AiRunPage(BaseModel):
 
 
 class AiStatusOut(BaseModel):
-    """前端据此决定显不显示 AI 区块、要不要提示"演示模式"。"""
+    """前端据此决定显不显示 AI 区块、要不要提示"演示模式"。
 
-    enabled: bool
-    provider: str
-    model: str
-    mock: bool
-    has_key: bool
-    daily_limit: int
-    used_today: int
-    stages: list[str]
+    文档里的示例值是当前真实配置的形状，别拿它当响应值——
+    enabled 会随管理员开关变化，used_today 每天从 0 开始涨。
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "enabled": True,
+                "provider": "deepseek",
+                "model": "deepseek-flash",
+                "mock": False,
+                "has_key": True,
+                "daily_limit": 30,
+                "used_today": 3,
+                "stages": ["PROPOSAL"],
+            }
+        }
+    )
+
+    enabled: bool = Field(description="管理员开关 + .env 默认值的最终结果；关闭后不再自动预审")
+    provider: str = Field(description="mock / deepseek，由 AI_PROVIDER 决定")
+    model: str = Field(description="真实模型名，例如 deepseek-flash；mock 时为 mock-reviewer-v1")
+    mock: bool = Field(description="true 表示离线演示，不调用真实模型")
+    has_key: bool = Field(description="是否配置了 API Key（只回布尔值，不回 key 本身）")
+    daily_limit: int = Field(description="每日预审上限，0 表示不限")
+    used_today: int = Field(description="今天已发起的预审次数（含教师重跑）")
+    stages: list[str] = Field(description="已接入 AI 的环节，目前只有 PROPOSAL")
 
 
 class AiRunCreate(BaseModel):

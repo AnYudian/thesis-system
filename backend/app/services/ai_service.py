@@ -30,7 +30,7 @@ from app.models.material import Material
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.ai import AiResult, AiRunOut, AiStatusOut
-from app.services import material_service
+from app.services import config_service, material_service
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,6 @@ def _now() -> datetime:
 
 def _today_start() -> datetime:
     return _now().replace(hour=0, minute=0, second=0, microsecond=0)
-
-
-def _enabled() -> bool:
-    return get_settings().ai_enabled
 
 
 def supports_stage(stage: str) -> bool:
@@ -72,7 +68,7 @@ async def used_today(db: AsyncSession) -> int:
 async def status(db: AsyncSession) -> AiStatusOut:
     settings = get_settings()
     return AiStatusOut(
-        enabled=settings.ai_enabled,
+        enabled=await config_service.get_ai_enabled(db),
         provider=settings.ai_provider,
         model=settings.ai_model,
         mock=(settings.ai_provider or "mock").lower() == "mock",
@@ -95,7 +91,7 @@ async def enqueue(
 ) -> AiRun | None:
     """建一条待审记录。返回 None 表示这次不需要跑（未启用 / 环节未接入 / 超额）。"""
     settings = get_settings()
-    if not settings.ai_enabled:
+    if not await config_service.get_ai_enabled(db):
         return None
     if material.stage not in _SUPPORTED_VALUES:
         return None

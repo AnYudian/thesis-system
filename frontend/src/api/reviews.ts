@@ -22,6 +22,11 @@ export interface PendingItem {
   stage_overdue: boolean
   // 最近一次催交时间；没有催过为 null
   last_reminded_at: string | null
+  // AI 门禁：当前环节最新材料的最近一次成功预审；有必改时不进老师待审核
+  ai_major_count: number
+  ai_major_titles: string[]
+  ai_score: number | null
+  ai_checked_at: string | null
 }
 
 export interface StageReview {

@@ -16,8 +16,15 @@ class ConfigOut(BaseModel):
 
     midterm_min_guidance: int
     stage_deadlines: dict[Stage, date | None]
+    ai_enabled: bool = False
     updated_at: datetime | None = None
     updated_by_name: str | None = None
+
+
+class AiToggle(BaseModel):
+    """管理员开关 AI 预审。单独一个接口，避免和参数表单互相覆盖。"""
+
+    enabled: bool
 
 
 class ConfigUpdate(BaseModel):

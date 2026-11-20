@@ -12,7 +12,7 @@ from app.api.deps import DBDep, CurrentUser, require_role
 from app.core.response import ApiResponse, ok
 from app.models.enums import Role
 from app.models.user import User
-from app.schemas.config import ConfigOut, ConfigUpdate
+from app.schemas.config import AiToggle, ConfigOut, ConfigUpdate
 from app.services import config_service
 
 router = APIRouter(prefix="/config", tags=["系统参数"])
@@ -30,3 +30,13 @@ async def save_config(
     db: DBDep, admin: AdminUser, payload: ConfigUpdate
 ) -> ApiResponse[ConfigOut]:
     return ok(await config_service.update_config(db, admin, payload))
+
+
+@router.put("/ai", response_model=ApiResponse[ConfigOut], summary="开启 / 关闭 AI 预审（仅管理员）")
+async def toggle_ai(
+    db: DBDep, admin: AdminUser, payload: AiToggle
+) -> ApiResponse[ConfigOut]:
+    # 立即生效：预审状态读的是库里的设置，不依赖重启，也不改 .env
+    await config_service.set_ai_enabled(db, admin, payload.enabled)
+    message = "AI 预审已开启，新提交的材料会自动预审" if payload.enabled else "AI 预审已关闭，材料转为人工审阅"
+    return ok(await config_service.get_config(db), message=message)

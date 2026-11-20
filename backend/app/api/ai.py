@@ -17,7 +17,7 @@ from app.core.response import ApiResponse, ok
 from app.models.enums import Role, Stage
 from app.models.user import User
 from app.schemas.ai import AiRunCreate, AiRunOut, AiRunPage, AiStatusOut
-from app.services import ai_service, log_service, material_service
+from app.services import ai_service, config_service, log_service, material_service
 from app.services import student_service as student_svc
 
 router = APIRouter(prefix="/ai", tags=["AI 预审"])
@@ -104,8 +104,8 @@ async def create_run(
         raise AppError(40310, "只能对自己名下的学生发起预审", http_status=403)
 
     settings = get_settings()
-    if not settings.ai_enabled:
-        raise AppError(42230, "AI 预审未启用，请联系管理员在配置中打开", http_status=422)
+    if not await config_service.get_ai_enabled(db):
+        raise AppError(42230, "AI 预审未启用，请联系管理员在参数配置里打开", http_status=422)
     if not ai_service.supports_stage(material.stage):
         raise AppError(42231, "当前只接入了开题报告的 AI 预审", http_status=422)
     if settings.ai_daily_limit and await ai_service.used_today(db) >= settings.ai_daily_limit:

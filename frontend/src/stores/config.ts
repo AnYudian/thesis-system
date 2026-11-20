@@ -12,6 +12,8 @@ import { configApi, type StageDeadlines } from '@/api/config'
 export const useConfigStore = defineStore('config', () => {
   const midtermMin = ref(10)
   const deadlines = ref<StageDeadlines>({})
+  // AI 总开关：管理员在参数配置页改，教师端/学生端读同一份，用于提示"AI 是否可用"
+  const aiEnabled = ref(false)
   const loaded = ref(false)
   const loading = ref(false)
 
@@ -23,6 +25,7 @@ export const useConfigStore = defineStore('config', () => {
       const data = await configApi.get()
       midtermMin.value = data.midterm_min_guidance
       deadlines.value = data.stage_deadlines
+      aiEnabled.value = data.ai_enabled
       loaded.value = true
     } finally {
       loading.value = false
@@ -45,5 +48,5 @@ export const useConfigStore = defineStore('config', () => {
 
   const today = computed(() => new Date().toISOString().slice(0, 10))
 
-  return { midtermMin, deadlines, loaded, load, deadlineOf, daysLeft, today }
+  return { midtermMin, deadlines, aiEnabled, loaded, load, deadlineOf, daysLeft, today }
 })

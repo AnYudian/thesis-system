@@ -5,6 +5,7 @@ import { Download, UploadFilled } from '@element-plus/icons-vue'
 
 import ReminderBanner from '@/components/ReminderBanner.vue'
 import AiReviewPanel from '@/components/AiReviewPanel.vue'
+import AiStatusBar from '@/components/AiStatusBar.vue'
 import { materialsApi, type Material } from '@/api/materials'
 import { studentsApi } from '@/api/students'
 import { STAGES } from '@/constants/stages'
@@ -154,6 +155,8 @@ onMounted(async () => {
       </div>
       <span class="count">已提交 <b>{{ total }}</b> 份</span>
     </header>
+
+    <AiStatusBar />
 
     <ReminderBanner />
 

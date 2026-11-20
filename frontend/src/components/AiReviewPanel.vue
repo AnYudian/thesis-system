@@ -34,6 +34,7 @@ const stageLabel = STAGES.find((s) => s.code === 'PROPOSAL')?.label ?? '开题�
 const latest = computed<AiRun | null>(() => runs.value[0] ?? null)
 const history = computed(() => runs.value.slice(1))
 const result = computed(() => latest.value?.result ?? null)
+const majorIssues = computed(() => (result.value?.issues ?? []).filter((issue) => issue.level === 'MAJOR'))
 const running = computed(
   () => latest.value?.status === 'QUEUED' || latest.value?.status === 'RUNNING',
 )
@@ -134,7 +135,19 @@ onBeforeUnmount(stopPolling)
 </script>
 
 <template>
-  <section v-if="enabled" v-loading="loading" class="ai-panel">
+  <section v-if="!loading && !enabled" class="ai-panel ai-panel--off">
+    <header class="ai-head">
+      <div class="ai-title">
+        <h3>{{ stageLabel }} · AI 预审</h3>
+        <p>管理员在「参数配置」里关闭了 AI 预审，材料仍可正常提交与审核。</p>
+      </div>
+    </header>
+    <p class="ai-off-text">
+      当前由指导老师人工审阅；重新开启后，新提交的开题报告会自动送审，历史记录不会被删除。
+    </p>
+  </section>
+
+  <section v-else-if="enabled" v-loading="loading" class="ai-panel">
     <header class="ai-head">
       <div class="ai-title">
         <h3>{{ stageLabel }} · AI 预审</h3>
@@ -179,6 +192,17 @@ onBeforeUnmount(stopPolling)
     </div>
 
     <template v-else-if="result">
+      <div v-if="majorIssues.length" class="ai-gate is-block">
+        <p class="gate-title">AI 判定有 {{ majorIssues.length }} 条必改，已先退回学生修改</p>
+        <p class="gate-sub">
+          学生按下方清单改完后重新上传本环节材料，系统会自动再审；
+          没有必改项后才进入指导老师审核。老师仍可人工优先处理。
+        </p>
+      </div>
+      <div v-else-if="!running" class="ai-gate is-pass">
+        <p class="gate-title">没有必改项，可以进入指导老师复核</p>
+      </div>
+
       <div class="score-row">
         <div class="score-box" :class="scoreTone(result.score)">
           <span class="score-num">{{ Math.round(result.score) }}</span>
@@ -256,6 +280,62 @@ onBeforeUnmount(stopPolling)
   border-left: 3px solid var(--th-accent);
   border-radius: 5px;
   box-shadow: 0 6px 16px rgba(16, 31, 51, 0.05);
+}
+
+/* 关闭态：保留一个安静的提示条，学生和老师都能知道"不是系统坏了" */
+.ai-panel--off {
+  border-left-color: var(--th-border);
+  box-shadow: none;
+}
+
+.ai-panel--off .ai-title h3 {
+  color: var(--th-text-muted);
+}
+
+.ai-off-text {
+  margin: 12px 0 2px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--th-text-muted);
+}
+
+/* 必改门禁：红 = 先改稿，绿 = 可以交老师 */
+.ai-gate {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 3px;
+  border-left: 3px solid transparent;
+}
+
+.ai-gate.is-block {
+  background: rgba(163, 60, 42, 0.06);
+  border-left-color: #a33c2a;
+}
+
+.ai-gate.is-pass {
+  background: rgba(47, 107, 79, 0.07);
+  border-left-color: #3f7d5a;
+}
+
+.gate-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.is-block .gate-title {
+  color: #8c3222;
+}
+
+.is-pass .gate-title {
+  color: #2f6b4f;
+}
+
+.gate-sub {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--th-text-muted);
 }
 
 .ai-head {

@@ -323,6 +323,8 @@ onMounted(loadAll)
         </ol>
       </section>
 
+      <AiReviewPanel :student-id="studentId" :can-rerun="isTeacher || auth.role === 'ADMIN'" />
+
       <section v-if="isTeacher && detail.status !== 'ARCHIVED'" class="panel action-panel">
         <header class="panel-head">
           <h3>本环节审核</h3>
@@ -362,8 +364,6 @@ onMounted(loadAll)
           </div>
         </div>
       </section>
-
-      <AiReviewPanel :student-id="studentId" :can-rerun="isTeacher || auth.role === 'ADMIN'" />
 
       <section class="panel">
         <header class="panel-head">

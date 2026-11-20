@@ -7,15 +7,16 @@
 - 审核连点两下不能推进两个环节：查学生时加行锁，第二个请求会看到已经变了的状态
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.exceptions import AppError
+from app.models.ai_run import AiRun
 from app.models.audit_log import AuditLog
-from app.models.enums import STAGE_NEXT, STAGE_ORDER, ReviewAction, Stage, StudentStatus
+from app.models.enums import STAGE_NEXT, STAGE_ORDER, AiRunStatus, ReviewAction, Stage, StudentStatus
 from app.models.guidance import GuidanceRecord
 from app.models.material import Material
 from app.models.reminder import Reminder
@@ -284,6 +285,31 @@ async def pending(
     ).all()
     last_reminded = dict(reminder_rows)
 
+    # AI 门禁：只看"当前环节最新一版材料"的成功预审结果。
+    # 老师手动重跑旧版本时会产生更新的记录，按版本号过滤掉，避免旧结论盖住新稿。
+    ai_rows = (
+        await db.execute(
+            select(AiRun.student_id, AiRun.stage, AiRun.material_version, AiRun.score, AiRun.result, AiRun.finished_at)
+            .where(AiRun.student_id.in_(ids), AiRun.status == AiRunStatus.DONE.value)
+            .order_by(AiRun.id.desc())
+        )
+    ).all()
+    ai_gate: dict[tuple[int, str], tuple[int, float | None, list[str], datetime | None]] = {}
+    for sid, stage, version, score, result, finished_at in ai_rows:
+        key = (sid, stage)
+        if key in ai_gate:
+            continue
+        latest_version = material_stats.get(key, (0, None, None))[2]
+        if latest_version and version != latest_version:
+            continue
+        issues = (result or {}).get("issues") or []
+        majors = [
+            str(item.get("title"))
+            for item in issues
+            if isinstance(item, dict) and item.get("level") == "MAJOR" and item.get("title")
+        ]
+        ai_gate[key] = (len(majors), score, majors[:3], finished_at)
+
     # 参数配置每次请求读一次，别在循环里反复查；中期次数与截止日期都从这里取
     midterm_required = await config_service.get_midterm_min(db)
     deadlines = await config_service.get_stage_deadlines(db)
@@ -296,6 +322,9 @@ async def pending(
         )
         review = last_review.get((student.id, student.current_stage))
         stage_deadline = deadlines.get(Stage(student.current_stage))
+        ai_major_count, ai_score, ai_titles, ai_checked_at = ai_gate.get(
+            (student.id, student.current_stage), (0, None, [], None)
+        )
         items.append(
             PendingItem(
                 student_id=student.id,
@@ -318,6 +347,10 @@ async def pending(
                 last_reminded_at=last_reminded.get(student.id),
                 stage_deadline=stage_deadline,
                 stage_overdue=bool(stage_deadline and stage_deadline < today),
+                ai_major_count=ai_major_count,
+                ai_major_titles=ai_titles,
+                ai_score=ai_score,
+                ai_checked_at=ai_checked_at,
             )
         )
 

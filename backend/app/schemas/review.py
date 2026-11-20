@@ -57,6 +57,12 @@ class PendingItem(BaseModel):
     stage_overdue: bool = False
     # 最近一次催交时间：列表里提示"什么时候催过"，避免老师隔天重复催
     last_reminded_at: datetime | None = None
+    # AI 门禁：当前环节最新材料的最新一次成功预审。
+    # 有必改项时不计入"待审核"——学生改完重新提交、重审没有必改后才轮到老师看。
+    ai_major_count: int = 0
+    ai_major_titles: list[str] = Field(default_factory=list)
+    ai_score: float | None = None
+    ai_checked_at: datetime | None = None
 
 
 class ReviewResult(BaseModel):

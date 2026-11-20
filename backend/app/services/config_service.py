@@ -18,6 +18,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.enums import STAGE_ORDER, Stage
 from app.models.system_setting import SystemSetting
 from app.models.user import User
@@ -26,6 +27,8 @@ from app.services import log_service
 
 KEY_MIDTERM = "midterm_min_guidance"
 KEY_DEADLINES = "stage_deadlines"
+# AI 预审开关：库里没记录时跟随 .env 的 AI_ENABLED，管理员可在参数配置页改
+KEY_AI = "ai_enabled"
 
 DEFAULT_MIDTERM_MIN_GUIDANCE = 10
 
@@ -88,6 +91,45 @@ async def get_midterm_min(db: AsyncSession) -> int:
     return _midterm_from((await _load(db)).get(KEY_MIDTERM))
 
 
+def _ai_from(row: _Row | None) -> bool:
+    """AI 开关的默认值来自 .env，管理员改过就以库里的为准。
+
+    这样部署时 AI_ENABLED=false 表示"默认关闭"，管理员在界面上点开也能用；
+    改坏库里的值同样退回 .env，不让一个坏 JSON 把预审锁死或误开。
+    """
+    if row is None:
+        return get_settings().ai_enabled
+    try:
+        return bool(json.loads(row.value))
+    except (ValueError, TypeError):
+        return get_settings().ai_enabled
+
+
+async def get_ai_enabled(db: AsyncSession) -> bool:
+    return _ai_from((await _load(db)).get(KEY_AI))
+
+
+async def set_ai_enabled(db: AsyncSession, actor: User, enabled: bool) -> bool:
+    """管理员开关 AI：写库 + 记操作日志，下一步预审立刻按新状态走，不用重启。"""
+    row = await db.get(SystemSetting, KEY_AI)
+    if row is None:
+        row = SystemSetting(key=KEY_AI, value="true")
+        db.add(row)
+    row.value = json.dumps(bool(enabled))
+    row.updated_by = actor.id
+
+    await log_service.record(
+        db,
+        user_id=actor.id,
+        action="AI_TOGGLE",
+        target_type="config",
+        target_id=KEY_AI,
+        detail={"enabled": bool(enabled)},
+    )
+    await db.commit()
+    return bool(enabled)
+
+
 async def get_stage_deadlines(db: AsyncSession) -> dict[Stage, date]:
     return _deadlines_from((await _load(db)).get(KEY_DEADLINES))
 
@@ -109,6 +151,7 @@ async def get_config(db: AsyncSession) -> ConfigOut:
     return ConfigOut(
         midterm_min_guidance=_midterm_from(settings.get(KEY_MIDTERM)),
         stage_deadlines={stage: deadlines.get(stage) for stage in STAGE_ORDER},
+        ai_enabled=_ai_from(settings.get(KEY_AI)),
         updated_at=latest.updated_at if latest else None,
         updated_by_name=updated_by_name,
     )
