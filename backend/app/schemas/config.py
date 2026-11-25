@@ -16,8 +16,24 @@ class ConfigOut(BaseModel):
 
     midterm_min_guidance: int
     stage_deadlines: dict[Stage, date | None]
+    ai_enabled: bool = False
+    # 0 表示不限；默认值来自 .env 的 AI_DAILY_LIMIT
+    ai_daily_limit: int = 0
     updated_at: datetime | None = None
     updated_by_name: str | None = None
+
+
+class AiConfigUpdate(BaseModel):
+    """管理员改 AI 预审的运行时配置。
+
+    两项都可选，只改传进来的那一项：开关和次数在同一个卡片里，
+    但"调次数"不该顺手把管理员刚关掉的开关又打开。
+    """
+
+    enabled: bool | None = Field(default=None, description="是否开启 AI 预审")
+    daily_limit: int | None = Field(
+        default=None, ge=0, le=200, description="每日预审次数上限，0 表示不限"
+    )
 
 
 class ConfigUpdate(BaseModel):

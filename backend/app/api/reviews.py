@@ -90,7 +90,18 @@ async def list_reviews(
     return ok(ReviewPage(items=items, total=total, page=page, size=size))
 
 
-@router.post("/{student_id}", response_model=ApiResponse[ReviewResult], summary="通过 / 退回")
+@router.post(
+    "/{student_id}",
+    response_model=ApiResponse[ReviewResult],
+    summary="通过 / 退回",
+    description=(
+        "教师的最终决定，通过进入下一环节、退回留在本环节。\n\n"
+        "- 退回必须写原因；`comment` 最长 500 字\n"
+        "- 可选 `ai_run_id` + `ai_adopted`：记录这次决定参考了哪次 AI 预审、采纳了哪几条问题，"
+        "未勾选视为未采纳；预审记录必须属于该学生当前环节，否则返回 42225\n"
+        "- AI 本身不会写审核记录，审核历史里只出现老师本人的决定"
+    ),
+)
 async def decide(
     db: DBDep,
     actor: CurrentUser,
@@ -112,6 +123,8 @@ async def decide(
         reviewer=actor,
         action=payload.action,
         comment=payload.comment,
+        ai_run_id=payload.ai_run_id,
+        ai_adopted=[issue.model_dump() for issue in payload.ai_adopted] if payload.ai_adopted else None,
     )
 
     result = ReviewResult(
@@ -127,6 +140,8 @@ async def decide(
             to_stage=review.to_stage,  # type: ignore[arg-type]
             material_version=review.material_version,
             comment=review.comment,
+            ai_run_id=review.ai_run_id,
+            ai_adopted=review.ai_adopted,
             reviewer_name=actor.real_name or actor.username,
             created_at=review.created_at,
         ),

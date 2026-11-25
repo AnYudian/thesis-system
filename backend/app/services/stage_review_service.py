@@ -7,15 +7,16 @@
 - 审核连点两下不能推进两个环节：查学生时加行锁，第二个请求会看到已经变了的状态
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.exceptions import AppError
+from app.models.ai_run import AiRun
 from app.models.audit_log import AuditLog
-from app.models.enums import STAGE_NEXT, STAGE_ORDER, ReviewAction, Stage, StudentStatus
+from app.models.enums import STAGE_NEXT, STAGE_ORDER, AiRunStatus, ReviewAction, Stage, StudentStatus
 from app.models.guidance import GuidanceRecord
 from app.models.material import Material
 from app.models.reminder import Reminder
@@ -33,6 +34,8 @@ async def decide(
     reviewer: User,
     action: ReviewAction,
     comment: str | None,
+    ai_run_id: int | None = None,
+    ai_adopted: list[dict] | None = None,
 ) -> tuple[StageReview, Student]:
     # FOR UPDATE：同一学生的两次点击串行执行，避免一次通过直接跨两环
     student = await db.scalar(select(Student).where(Student.id == student_id).with_for_update())
@@ -45,6 +48,13 @@ async def decide(
     text = (comment or "").strip() or None
     if action is ReviewAction.RETURN and text is None:
         raise AppError(42220, "退回必须填写原因，学生要知道改什么", http_status=422)
+
+    # 采纳记录必须对得上"这个学生、这个环节"的那次预审：
+    # 前端传错 id 时宁可拒绝，也不要让 A 同学的 AI 意见记到 B 同学名下
+    if ai_run_id is not None:
+        run = await db.get(AiRun, ai_run_id)
+        if run is None or run.student_id != student.id or run.stage != current.value:
+            raise AppError(42225, "AI 预审记录与该学生当前环节不匹配", http_status=422)
 
     # 审核时该环节的最新版本，写进记录里方便回溯"当时看的是哪一版"
     material_version = await db.scalar(
@@ -89,6 +99,8 @@ async def decide(
         to_stage=to_stage.value,
         material_version=material_version,
         comment=text,
+        ai_run_id=ai_run_id,
+        ai_adopted=ai_adopted or None,
         reviewer_id=reviewer.id,
     )
     db.add(review)
@@ -109,6 +121,7 @@ async def decide(
                 "stage": current.value,
                 "to_stage": to_stage.value,
                 "comment": text,
+                "ai_adopted": len(ai_adopted or []),
             },
         )
     )
@@ -186,6 +199,8 @@ async def list_reviews(
             to_stage=review.to_stage,  # type: ignore[arg-type]
             material_version=review.material_version,
             comment=review.comment,
+            ai_run_id=review.ai_run_id,
+            ai_adopted=review.ai_adopted,
             reviewer_name=reviewer_name,
             created_at=review.created_at,
         )
@@ -284,6 +299,31 @@ async def pending(
     ).all()
     last_reminded = dict(reminder_rows)
 
+    # AI 门禁：只看"当前环节最新一版材料"的成功预审结果。
+    # 老师手动重跑旧版本时会产生更新的记录，按版本号过滤掉，避免旧结论盖住新稿。
+    ai_rows = (
+        await db.execute(
+            select(AiRun.student_id, AiRun.stage, AiRun.material_version, AiRun.score, AiRun.result, AiRun.finished_at)
+            .where(AiRun.student_id.in_(ids), AiRun.status == AiRunStatus.DONE.value)
+            .order_by(AiRun.id.desc())
+        )
+    ).all()
+    ai_gate: dict[tuple[int, str], tuple[int, float | None, list[str], datetime | None]] = {}
+    for sid, stage, version, score, result, finished_at in ai_rows:
+        key = (sid, stage)
+        if key in ai_gate:
+            continue
+        latest_version = material_stats.get(key, (0, None, None))[2]
+        if latest_version and version != latest_version:
+            continue
+        issues = (result or {}).get("issues") or []
+        majors = [
+            str(item.get("title"))
+            for item in issues
+            if isinstance(item, dict) and item.get("level") == "MAJOR" and item.get("title")
+        ]
+        ai_gate[key] = (len(majors), score, majors[:3], finished_at)
+
     # 参数配置每次请求读一次，别在循环里反复查；中期次数与截止日期都从这里取
     midterm_required = await config_service.get_midterm_min(db)
     deadlines = await config_service.get_stage_deadlines(db)
@@ -296,6 +336,9 @@ async def pending(
         )
         review = last_review.get((student.id, student.current_stage))
         stage_deadline = deadlines.get(Stage(student.current_stage))
+        ai_major_count, ai_score, ai_titles, ai_checked_at = ai_gate.get(
+            (student.id, student.current_stage), (0, None, [], None)
+        )
         items.append(
             PendingItem(
                 student_id=student.id,
@@ -318,6 +361,10 @@ async def pending(
                 last_reminded_at=last_reminded.get(student.id),
                 stage_deadline=stage_deadline,
                 stage_overdue=bool(stage_deadline and stage_deadline < today),
+                ai_major_count=ai_major_count,
+                ai_major_titles=ai_titles,
+                ai_score=ai_score,
+                ai_checked_at=ai_checked_at,
             )
         )
 

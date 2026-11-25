@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { configApi } from '@/api/config'
+import { aiApi, type AiStatus } from '@/api/ai'
 import { STAGES } from '@/constants/stages'
 import { useConfigStore } from '@/stores/config'
 import { formatTime } from '@/utils/format'
@@ -11,6 +12,12 @@ const configStore = useConfigStore()
 
 const loading = ref(false)
 const saving = ref(false)
+// AI 开关与每日上限单独保存：改完马上生效，不影响下面那套审核口径表单
+const aiEnabled = ref(false)
+const aiLimit = ref(30)
+const aiSaving = ref(false)
+const aiLimitSaving = ref(false)
+const aiStatus = ref<AiStatus | null>(null)
 const meta = reactive<{ updated_at: string | null; updated_by_name: string | null }>({
   updated_at: null,
   updated_by_name: null,
@@ -44,6 +51,9 @@ async function load() {
     )
     meta.updated_at = data.updated_at
     meta.updated_by_name = data.updated_by_name
+    aiEnabled.value = data.ai_enabled
+    aiLimit.value = data.ai_daily_limit
+    aiStatus.value = await aiApi.status().catch(() => null)
   } finally {
     loading.value = false
   }
@@ -70,6 +80,56 @@ async function save() {
   }
 }
 
+// 关掉 AI 前先确认：老师可能正等着某份材料的建议
+async function toggleAi(next: boolean) {
+  if (!next) {
+    try {
+      await ElMessageBox.confirm(
+        '关闭后不会再自动预审新提交的材料，已有记录与结果仍然保留；需要时可以随时再打开。',
+        '关闭 AI 预审',
+        { confirmButtonText: '确认关闭', cancelButtonText: '再想想', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+  }
+  aiSaving.value = true
+  try {
+    const data = await configApi.updateAi({ enabled: next })
+    aiEnabled.value = data.ai_enabled
+    aiLimit.value = data.ai_daily_limit
+    aiStatus.value = await aiApi.status().catch(() => null)
+    // 教师端、学生端读的是同一个 store，切过去立刻看到新状态
+    await configStore.load(true)
+    ElMessage.success(next ? 'AI 预审已开启，新提交的材料会自动预审' : 'AI 预审已关闭，材料转为人工审阅')
+  } catch {
+    // 失败时把开关拨回去，避免界面显示与实际状态不一致
+    aiEnabled.value = !next
+  } finally {
+    aiSaving.value = false
+  }
+}
+
+// 次数由校方自己定，不写死在代码里；0 是"不限"，所以允许 0
+async function saveAiLimit() {
+  if (!Number.isInteger(aiLimit.value) || aiLimit.value < 0 || aiLimit.value > 200) {
+    ElMessage.warning('每日上限请填 0-200 之间的整数，0 表示不限')
+    return
+  }
+  aiLimitSaving.value = true
+  try {
+    const data = await configApi.updateAi({ daily_limit: aiLimit.value })
+    aiLimit.value = data.ai_daily_limit
+    aiStatus.value = await aiApi.status().catch(() => null)
+    ElMessage.success(aiLimit.value ? `每日上限已设为 ${aiLimit.value} 次` : '已取消每日上限（不限次数）')
+  } catch {
+    // 保存失败时回读服务端值，避免界面停在一个没生效的数字上
+    aiLimit.value = aiStatus.value?.daily_limit ?? aiLimit.value
+  } finally {
+    aiLimitSaving.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -92,6 +152,56 @@ onMounted(load)
         <el-button type="primary" :loading="saving" @click="save">保存参数</el-button>
       </div>
     </header>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>AI 预审</h3>
+        <p>
+          关闭后学生提交的材料不再自动预审，教师端、学生端都会显示「AI 预审已关闭」；
+          历史记录与分数仍然保留，各端都能继续查看。每日上限由学校自己设，改完立即生效。
+          AI 结论从不参与通过 / 退回的判定。
+        </p>
+      </div>
+      <div class="field-row">
+        <label class="field-label">开启 AI 预审</label>
+        <el-switch
+          v-model="aiEnabled"
+          :loading="aiSaving"
+          :disabled="aiSaving"
+          @change="(value: string | number | boolean) => toggleAi(Boolean(value))"
+        />
+        <span v-if="aiStatus" class="field-hint">
+          <template v-if="aiStatus.enabled">
+            当前：{{ aiStatus.mock ? '演示模式（不调用真实模型）' : `真实模型 ${aiStatus.model}` }}
+          </template>
+          <template v-else>当前：已关闭</template>
+          · 今日已用 {{ aiStatus.used_today }} 次
+          <template v-if="!aiStatus.has_key && !aiStatus.mock"> · 未配置 API Key，开启后也无法真正调用</template>
+        </span>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label">每日预审上限</label>
+        <el-input-number
+          v-model="aiLimit"
+          :min="0"
+          :max="200"
+          :step="5"
+          controls-position="right"
+          :disabled="aiLimitSaving"
+        />
+        <el-button :loading="aiLimitSaving" @click="saveAiLimit">保存次数</el-button>
+        <span class="field-hint">
+          <template v-if="aiLimit">
+            每天最多发起 {{ aiLimit }} 次预审（含教师重跑），超出后当天不再自动审。
+          </template>
+          <template v-else>0 = 不限次数，按校方预算自行把握。</template>
+          <template v-if="aiStatus && aiStatus.daily_limit">
+            今日已用 {{ aiStatus.used_today }} / {{ aiStatus.daily_limit }} 次。
+          </template>
+        </span>
+      </div>
+    </section>
 
     <section class="card">
       <div class="card-head">

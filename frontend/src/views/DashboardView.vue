@@ -47,9 +47,16 @@ const students = ref<Student[]>([])
 
 const stageIndex = (code: string) => STAGES.findIndex((s) => s.code === code) + 1
 
+// AI 判定有必改项的，已先退给学生修改，不占老师的待审队列。
+// 工作台必须和阶段审核页用同一口径，否则两处数字对不上。
+function isAiBlocked(row: PendingItem) {
+  return (row.ai_major_count ?? 0) > 0
+}
+
 // “新提交”= 当前环节交过材料，且材料时间晚于最近一次审核（或根本没审过）。
 // 退回后学生重新上传也会重新进待审，不会被当成“已处理”漏掉。
 function isNewSubmission(row: PendingItem) {
+  if (isAiBlocked(row)) return false
   if (!row.material_count || !row.latest_material_at) return false
   if (!row.last_reviewed_at) return true
   return new Date(row.latest_material_at).getTime() > new Date(row.last_reviewed_at).getTime()
@@ -62,12 +69,15 @@ const stageCards = computed(() =>
       ...stage,
       count: rows.length,
       todo: rows.filter(isNewSubmission).length,
+      // 不叫 ai：STAGES 里的 ai 是“该环节后期可能接智能体”的标记
+      aiTodo: rows.filter(isAiBlocked).length,
     }
   }),
 )
 
 const maxCount = computed(() => Math.max(1, ...stageCards.value.map((s) => s.count)))
 const todoTotal = computed(() => stageCards.value.reduce((n, s) => n + s.todo, 0))
+const aiTodoTotal = computed(() => stageCards.value.reduce((n, s) => n + s.aiTodo, 0))
 
 const totalStudents = computed(() => students.value.length)
 const archivedCount = computed(() => students.value.filter((s) => s.status === 'ARCHIVED').length)
@@ -164,9 +174,14 @@ onMounted(async () => {
       <header class="section-head">
         <div>
           <h3>九环节学生分布</h3>
-          <p>数字是当前停留在该环节的学生数；「待审核」指已提交材料、尚未处理的</p>
+          <p>
+            数字是当前停留在该环节的学生数；「待审核」指已提交材料、尚未处理的。
+            有 AI 必改项的材料已先退给学生修改，不计入待审核。
+          </p>
         </div>
-        <span class="section-total">待审核 {{ todoTotal }} 份</span>
+        <span class="section-total">
+          待审核 {{ todoTotal }} 份<template v-if="aiTodoTotal"> · {{ aiTodoTotal }} 人 AI 待改</template>
+        </span>
       </header>
 
       <div class="stage-grid">
@@ -186,8 +201,13 @@ onMounted(async () => {
           <div class="stage-body">
             <span class="stage-count">{{ card.count }}<em>人</em></span>
             <span v-if="card.todo" class="stage-badge">{{ card.todo }} 份待审核</span>
+            <span v-else-if="card.aiTodo" class="stage-badge is-ai">{{ card.aiTodo }} 人 AI 待改</span>
             <span v-else class="stage-clear">暂无新提交</span>
           </div>
+
+          <p v-if="card.todo && card.aiTodo" class="stage-ai-line">
+            另有 {{ card.aiTodo }} 人 AI 待改，已先退回修改
+          </p>
 
           <div class="stage-bar"><i :style="{ width: barWidth(card.count) }" /></div>
         </article>
@@ -518,10 +538,22 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+.stage-badge.is-ai {
+  color: #8c3222;
+  background: rgba(163, 60, 42, 0.07);
+  border-color: rgba(163, 60, 42, 0.3);
+}
+
 .stage-clear {
   font-size: 11.5px;
   color: #a29a8b;
   white-space: nowrap;
+}
+
+.stage-ai-line {
+  margin: 0;
+  font-size: 11px;
+  color: #8c3222;
 }
 
 .stage-bar {

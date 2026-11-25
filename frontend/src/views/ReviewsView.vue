@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 
 import ReviewDecisionDialog from '@/components/ReviewDecisionDialog.vue'
+import AiStatusBar from '@/components/AiStatusBar.vue'
 import { remindersApi } from '@/api/reminders'
 import { reviewsApi, type PendingItem, type ReviewAction, type ReviewTarget } from '@/api/reviews'
 import { teachersApi } from '@/api/students'
@@ -38,17 +39,28 @@ function isNewSubmission(row: PendingItem) {
   return new Date(row.latest_material_at).getTime() > new Date(row.last_reviewed_at).getTime()
 }
 
-const todoCount = computed(() => items.value.filter(isNewSubmission).length)
+// AI 判出必改项时先让学生改稿重交：这一版不算老师的待办，
+// 否则老师会看到"待审核"，点开却发现 AI 自己都要求重写
+function isAiBlocked(row: PendingItem) {
+  return row.ai_major_count > 0
+}
+
+function awaitingReview(row: PendingItem) {
+  return isNewSubmission(row) && !isAiBlocked(row)
+}
+
+const todoCount = computed(() => items.value.filter(awaitingReview).length)
+const aiBlockedCount = computed(() => items.value.filter(isAiBlocked).length)
 const onlyTodo = ref(false)
 
 // 教师的工作顺序：先处理有新提交的，再按流程顺序往下排，
 // 这样打开页面第一屏就是该动手的人，不用逐条点开猜。
 const displayItems = computed(() => {
-  const rows = onlyTodo.value ? items.value.filter(isNewSubmission) : items.value
+  const rows = onlyTodo.value ? items.value.filter(awaitingReview) : items.value
+  const rank = (row: PendingItem) => (awaitingReview(row) ? 0 : isAiBlocked(row) ? 2 : 1)
   return [...rows].sort((a, b) => {
-    const an = isNewSubmission(a) ? 0 : 1
-    const bn = isNewSubmission(b) ? 0 : 1
-    if (an !== bn) return an - bn
+    const diff = rank(a) - rank(b)
+    if (diff !== 0) return diff
     const order = stageIndex(a.stage) - stageIndex(b.stage)
     return order !== 0 ? order : a.sno.localeCompare(b.sno)
   })
@@ -197,7 +209,9 @@ function open(row: PendingItem, action: ReviewAction) {
 }
 
 function rowClass({ row }: { row: PendingItem }) {
-  return isNewSubmission(row) ? 'row-todo' : ''
+  if (awaitingReview(row)) return 'row-todo'
+  if (isAiBlocked(row)) return 'row-ai'
+  return ''
 }
 
 // 进入页面（含从详情返回）时按地址栏还原筛选：环节、关键词、只看待审核都对得上。
@@ -242,16 +256,21 @@ watch(onlyTodo, syncUrl)
         <h2>{{ isAdmin ? '阶段流转' : '阶段审核' }}</h2>
         <p class="sub">
           {{ isAdmin
-            ? '全校在途学生的当前进度、材料、指导与上次流转都在这一页；点姓名或「详情」可追溯完整历史。放行由指导教师本人决定，管理员只读。'
-            : '先处理标了「待审核」的学生：打开详情核对材料、指导记录和审核历史，再决定通过或退回。退回必须写明要改的地方。' }}
+            ? '全校在途学生的当前进度、材料、指导与上次流转都在这一页；点姓名或「详情」可追溯完整历史。标了「AI 待改」的学生正在按必改意见修改，暂不进入教师待审核。'
+            : '先处理标了「待审核」的学生：打开详情核对材料、指导记录和审核历史，再决定通过或退回。有必改项的已先由 AI 退回学生改稿，重审无必改后才轮到老师。' }}
         </p>
       </div>
       <span class="count">
         {{ isAdmin ? '在途' : '待处理' }}
         <b>{{ items.length }}</b> 人
-        <template v-if="!isAdmin"> · 待审核 <b class="count-todo">{{ todoCount }}</b> 份</template>
+        <template v-if="!isAdmin">
+          · 待审核 <b class="count-todo">{{ todoCount }}</b> 份
+          <template v-if="aiBlockedCount"> · <b class="count-ai">{{ aiBlockedCount }}</b> 人 AI 待改</template>
+        </template>
       </span>
     </header>
+
+    <AiStatusBar />
 
     <section class="toolbar">
       <el-input
@@ -305,7 +324,12 @@ watch(onlyTodo, syncUrl)
             </el-button>
             <span class="cell-sub student-sub">
               {{ row.sno }}
-              <em v-if="isNewSubmission(row)" class="todo-tag">待审核</em>
+              <em
+                v-if="isAiBlocked(row)"
+                class="ai-tag"
+                :title="`AI 判出必改：${row.ai_major_titles.join('；')}`"
+              >AI 待改 {{ row.ai_major_count }}</em>
+              <em v-else-if="isNewSubmission(row)" class="todo-tag">待审核</em>
               <em v-else-if="!row.material_count" class="muted-tag">未交材料</em>
               <em v-else-if="row.last_action === 'RETURN' && needsMaterial(row)" class="muted-tag">待重交</em>
             </span>
@@ -563,6 +587,23 @@ watch(onlyTodo, syncUrl)
   border: 1px solid var(--th-border-soft);
 }
 
+/* AI 待改：颜色与"待审核"区分开，避免老师误以为是来等自己批的 */
+.ai-tag {
+  padding: 0 5px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 16px;
+  white-space: nowrap;
+  color: #8c3222;
+  background: rgba(163, 60, 42, 0.1);
+  border: 1px solid rgba(163, 60, 42, 0.35);
+  border-radius: 2px;
+}
+
+.count-ai {
+  color: #8c3222;
+}
+
 .cell-main.is-short {
   color: #a33a2a;
 }
@@ -697,6 +738,11 @@ watch(onlyTodo, syncUrl)
 /* 有新提交的行轻轻铺一层暖色，横向扫视时能一眼挑出来 */
 :deep(.el-table__body tr.row-todo > td.el-table__cell) {
   background: rgba(198, 168, 107, 0.08);
+}
+
+/* AI 待改的行给一点淡红底：扫一眼就知道"这行现在不该我动" */
+:deep(.el-table__body tr.row-ai > td.el-table__cell) {
+  background: rgba(163, 60, 42, 0.035);
 }
 
 :deep(.el-table th.el-table__cell) {

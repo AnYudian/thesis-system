@@ -105,3 +105,26 @@ AI_STAGES: set[Stage] = {
 class StudentStatus(str, Enum):
     ACTIVE = "ACTIVE"
     ARCHIVED = "ARCHIVED"
+
+
+class AiRunStatus(str, Enum):
+    """一次 AI 预审的生命周期。
+
+    SKIPPED 不是错误：环节未接入、文件格式不支持、当日额度用完都会走到这里，
+    保留一条记录是为了让老师和学生知道"为什么没有 AI 意见"，而不是干等。
+    """
+
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+
+
+AI_RUN_STATUS_LABELS: dict[AiRunStatus, str] = {
+    AiRunStatus.QUEUED: "排队中",
+    AiRunStatus.RUNNING: "审阅中",
+    AiRunStatus.DONE: "已完成",
+    AiRunStatus.FAILED: "审阅失败",
+    AiRunStatus.SKIPPED: "已跳过",
+}

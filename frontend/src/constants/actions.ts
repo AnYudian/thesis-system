@@ -34,6 +34,8 @@ export const ACTIONS: ActionMeta[] = [
   { value: 'STAGE_RETURN', label: '审核退回', tone: 'bad' },
   { value: 'REMIND', label: '催交材料', tone: 'warn' },
   { value: 'CONFIG_UPDATE', label: '修改参数', tone: 'warn' },
+  { value: 'AI_CONFIG', label: 'AI 设置', tone: 'warn' },
+  { value: 'AI_REVIEW', label: 'AI 预审', tone: 'muted' },
 ]
 
 export const ACTION_META: Record<string, ActionMeta> = Object.fromEntries(
@@ -55,6 +57,7 @@ export const DETAIL_LABELS: Record<string, string> = {
   version: '版本',
   material_id: '材料',
   record_id: '记录',
+  run_id: '预审',
   has_evidence: '附证据',
   method: '方式',
   username: '账号',
@@ -65,6 +68,7 @@ export const DETAIL_LABELS: Record<string, string> = {
   skipped: '跳过',
   role: '角色',
   enabled: '启用',
+  daily_limit: '每日上限',
   midterm_min_guidance: '中期最少指导次数',
   stage_deadlines: '环节截止日期',
 }

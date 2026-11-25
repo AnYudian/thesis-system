@@ -8,7 +8,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from app.api.deps import CurrentUser, DBDep
@@ -18,7 +18,7 @@ from app.models.enums import Role, Stage
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.material import MaterialOut, MaterialPage
-from app.services import log_service
+from app.services import ai_service, log_service
 from app.services import material_service as svc
 from app.services import student_service as student_svc
 
@@ -75,6 +75,7 @@ async def list_materials(
 async def upload_material(
     db: DBDep,
     actor: CurrentUser,
+    background: BackgroundTasks,
     stage: Annotated[Stage, Form(description="所属环节")],
     title: Annotated[str, Form(min_length=1, max_length=120, description="材料名称")],
     file: Annotated[UploadFile, File(description="PDF / Word / 图片 / 压缩包，20MB 以内")],
@@ -129,6 +130,13 @@ async def upload_material(
         uploader_name=actor.real_name or actor.username,
         created_at=material.created_at,
     )
+
+    # 开题报告上传后自动排一次 AI 预审；未启用/环节未接入时 enqueue 直接返回 None，
+    # 这条链路失败了也不影响上传结果，学生看到的仍是"上传成功"
+    run = await ai_service.enqueue(db, material=material, trigger="UPLOAD", actor_id=actor.id)
+    if run is not None:
+        background.add_task(ai_service.execute, run.id)
+
     return ok(item, message=f"已上传，当前为第 {material.version} 版")
 
 
