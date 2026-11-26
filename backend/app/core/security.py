@@ -38,6 +38,25 @@ def create_access_token(user_id: int, role: str) -> tuple[str, int]:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm), expires_in
 
 
+def create_evidence_ticket(user_id: int, record_id: int, ttl_seconds: int = 180) -> str:
+    """签发"只读某一个证据文件"的短票据。
+
+    为什么要单独做：浏览器新标签直接打开文件时带不了 Authorization 头，
+    只能把凭据放进 URL。把 8 小时的登录令牌放进去，一旦被复制或进日志就等于泄露账号；
+    票据只活 3 分钟、只对指定文件有效，泄露的代价可控。
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "scope": "evidence_read",
+        "rid": record_id,
+        "iat": int(now.timestamp()),
+        "exp": now + timedelta(seconds=ttl_seconds),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
 def decode_token(token: str) -> dict:
     """解析并校验 token；任何异常都转成统一的 401，前端只需处理一种情况。"""
     settings = get_settings()

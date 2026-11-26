@@ -21,17 +21,7 @@ _bearer = HTTPBearer(auto_error=False, description="登录接口返回的 Bearer
 DBDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def get_current_user(
-    db: DBDep,
-    request: Request,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
-) -> User:
-    # 兜底：浏览器直接打开文件（视频/PDF 预览）时带不了请求头，
-    # 允许把令牌放查询参数里。仅用于文件类只读接口，接口清单里其余接口仍要求请求头。
-    raw_token = credentials.credentials if credentials else request.query_params.get("token")
-    if not raw_token:
-        raise AppError(40100, "请先登录", http_status=401)
-
+async def _user_from_token(db: AsyncSession, raw_token: str) -> User:
     payload = decode_token(raw_token)
     try:
         user_id = int(payload["sub"])
@@ -45,7 +35,45 @@ async def get_current_user(
     return user
 
 
+async def get_current_user(
+    db: DBDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
+) -> User:
+    if credentials is None:
+        raise AppError(40100, "请先登录", http_status=401)
+    return await _user_from_token(db, credentials.credentials)
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_evidence_actor(
+    request: Request,
+    db: DBDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
+) -> User:
+    """证据文件专用鉴权：优先用请求头，其次用短票据。
+
+    浏览器新标签直接打开文件带不了请求头，只能把凭据放进 URL。
+    这里只接受"只读某一个文件、3 分钟有效"的票据，不接受登录令牌本身。
+    """
+    if credentials is not None:
+        return await _user_from_token(db, credentials.credentials)
+
+    ticket = request.query_params.get("ticket")
+    if not ticket:
+        raise AppError(40100, "链接已失效，请回到页面重新打开", http_status=401)
+
+    payload = decode_token(ticket)
+    if payload.get("scope") != "evidence_read":
+        raise AppError(40300, "该链接只能用于查看证据", http_status=403)
+    record_id = request.path_params.get("record_id")
+    if str(payload.get("rid")) != str(record_id):
+        raise AppError(40300, "票据与文件不匹配", http_status=403)
+    return await _user_from_token(db, ticket)
+
+
+EvidenceActor = Annotated[User, Depends(get_evidence_actor)]
 
 
 def require_role(*roles: Role):

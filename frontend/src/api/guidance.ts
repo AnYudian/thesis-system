@@ -1,4 +1,4 @@
-import http, { del, get } from './http'
+import http, { del, get, post } from './http'
 
 export type GuidanceMethod = 'MEET' | 'ONLINE'
 
@@ -98,13 +98,23 @@ export const guidanceApi = {
   /**
    * 视频 / PDF / 压缩包：让浏览器直接打开文件地址，由浏览器流式加载。
    *
-   * 为什么不再走 axios 下载成 blob：几十 MB 的视频要整份下完才能播，
+   * 为什么不走 axios 下载成 blob：几十 MB 的视频要整份下完才能播，
    * 中途任何抖动都会变成"打不开"；直接打开地址可以边下边播、支持拖动进度条。
-   * 浏览器打开新标签带不了 Authorization 头，所以令牌走查询参数（后端已支持）。
+   * 浏览器新标签带不了 Authorization 头，所以先换一张 3 分钟有效、
+   * 只能读这一个文件的票据放进 URL——登录令牌本身不进地址栏。
    */
-  openEvidence(record: GuidanceRecord) {
-    const token = localStorage.getItem('token') ?? ''
-    const url = `/api/guidance/${record.id}/evidence?token=${encodeURIComponent(token)}`
-    window.open(url, '_blank')
+  async openEvidence(record: GuidanceRecord) {
+    // 必须在点击的同一帧里先开空白页：等 await 回来再 window.open，
+    // 浏览器会当成"非用户操作"而拦截弹窗
+    const win = window.open('about:blank', '_blank')
+    try {
+      const { ticket } = await post<{ ticket: string; expires_in: number }>(`/guidance/${record.id}/ticket`)
+      const url = `/api/guidance/${record.id}/evidence?ticket=${encodeURIComponent(ticket)}`
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
+    } catch (err) {
+      win?.close()
+      throw err
+    }
   },
 }

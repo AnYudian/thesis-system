@@ -14,9 +14,10 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from app.api.deps import CurrentUser, DBDep
+from app.api.deps import CurrentUser, DBDep, EvidenceActor
 from app.core.exceptions import AppError
 from app.core.response import ApiResponse, ok
+from app.core.security import create_evidence_ticket
 from app.models.enums import GuidanceMethod, Role, Stage
 from app.models.student import Student
 from app.models.user import User
@@ -157,9 +158,22 @@ async def create_record(
     return ok(_to_out(record, student, actor), message="指导记录已登记")
 
 
+@router.post("/{record_id}/ticket", response_model=ApiResponse[dict], summary="签发证据预览票据")
+async def evidence_ticket(db: DBDep, actor: CurrentUser, record_id: int) -> ApiResponse[dict]:
+    """点"查看"时先换一张 3 分钟有效、只读这一个文件的票据。
+
+    把登录令牌直接放进 URL 会出现在地址栏、浏览器历史和访问日志里，
+    一旦被复制就等于账号被拿走；票据过期即失效，且只能读指定文件。
+    """
+    record, student = await svc.get_or_404(db, record_id)
+    _ensure_view(student, actor)
+    ttl = 180
+    return ok({"ticket": create_evidence_ticket(actor.id, record_id, ttl), "expires_in": ttl})
+
+
 @router.get("/{record_id}/evidence", summary="查看 / 下载指导证据")
 async def download_evidence(
-    db: DBDep, actor: CurrentUser, record_id: int
+    db: DBDep, actor: EvidenceActor, record_id: int
 ) -> FileResponse:
     record, student = await svc.get_or_404(db, record_id)
     _ensure_view(student, actor)
