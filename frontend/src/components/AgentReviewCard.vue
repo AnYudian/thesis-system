@@ -128,17 +128,25 @@ onBeforeUnmount(stopPolling)
 
 <template>
   <section v-loading="loading" class="panel agent-panel">
-    <header class="panel-head">
-      <h3>
-        智能审阅
-        <el-tag v-if="review" :type="review.status === 'FAILED' ? 'danger' : review.status === 'DONE' ? 'success' : 'info'" size="small">
-          {{ statusLabel }}
-        </el-tag>
-        <el-tag v-if="review?.simulation_only" type="warning" size="small" effect="plain">模拟结果</el-tag>
-      </h3>
-      <p>
-        按「本环节 + 前置材料」打包送智能审阅服务；结论仅供参考，是否通过仍由老师决定。
-      </p>
+    <header class="ai-head">
+      <div class="ai-title">
+        <div class="ai-title-row">
+          <span class="ai-seal" :class="{ 'has-issues': (review?.check_failed ?? 0) > 0 }">AI</span>
+          <h3>智能审阅</h3>
+          <el-tag
+            v-if="review"
+            :type="review.status === 'FAILED' ? 'danger' : review.status === 'DONE' ? 'success' : 'info'"
+            size="small"
+          >
+            {{ statusLabel }}
+          </el-tag>
+          <el-tag v-if="review?.simulation_only" type="warning" size="small" effect="plain">模拟结果</el-tag>
+        </div>
+        <p>
+          按「本环节 + 前置材料」打包送智能审阅服务；结论仅供参考，<b>是否通过仍由老师决定</b>。
+        </p>
+      </div>
+      <span v-if="review?.model" class="ai-model">{{ review.model }}</span>
     </header>
 
     <div class="pkg">
@@ -206,10 +214,70 @@ onBeforeUnmount(stopPolling)
 </template>
 
 <style scoped>
-.agent-panel :deep(.panel-head h3) {
+.agent-panel {
+  /* 用 inset 阴影做左侧强调条：父级 .panel 的 border 简写会覆盖 border-left，
+     阴影不会被覆盖，视觉更稳 */
+  box-shadow: inset 3px 0 0 var(--th-accent), 0 6px 16px rgba(16, 31, 51, 0.05);
+}
+.ai-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--th-border-soft);
+}
+.ai-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.ai-title-row h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.ai-title p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--th-text-muted);
+}
+.ai-title p b {
+  color: var(--th-text);
+}
+.ai-seal {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-family: var(--th-font-serif);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #d9c08a;
+  background: linear-gradient(145deg, #24405f, #16283f);
+  border: 1px solid rgba(198, 168, 107, 0.55);
+  border-radius: 7px;
+  box-shadow: 0 2px 6px rgba(16, 31, 51, 0.18);
+}
+.ai-seal.has-issues::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  background: #a33c2a;
+  border: 1.5px solid var(--th-surface);
+  border-radius: 50%;
+}
+.ai-model {
+  font-size: 12px;
+  color: var(--th-text-muted);
+  white-space: nowrap;
+  padding-top: 6px;
 }
 .pkg {
   border: 1px solid var(--el-border-color-lighter);
