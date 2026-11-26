@@ -63,7 +63,7 @@ class PackageFile:
     version: int
     file_name: str
     file_size: int
-    role: str
+    role: str | None
     included: bool = True
     skip_reason: str | None = None
     abs_path: Path | None = None
@@ -189,7 +189,8 @@ async def _guidance_package(db: AsyncSession, student: Student, stage: str) -> t
             version=0,
             file_name=r.evidence_name,
             file_size=r.evidence_size or 0,
-            role="other",
+            # 截图/代码包交给对方自动分类：对方明确要求这类文件 roles 传 null
+            role=None,
             abs_path=settings.upload_path / r.evidence_path,
         )
         if ext not in supported:
@@ -296,16 +297,24 @@ async def create_review_record(db: AsyncSession, pkg: Package, *, triggered_by: 
     db.add(review)
     await db.flush()
 
+    settings = get_settings()
     for f in pkg.files:
+        rel_path = None
+        if f.abs_path is not None:
+            try:
+                rel_path = str(f.abs_path.relative_to(settings.upload_path)).replace("\\", "/")
+            except ValueError:
+                rel_path = str(f.abs_path)
         db.add(
             AgentReviewItem(
                 review_id=review.id,
                 material_id=f.material_id,
+                stored_path=rel_path,
                 stage=f.stage,
                 material_version=f.version,
                 file_name=f.file_name,
                 file_size=f.file_size,
-                role=f.role,
+                role=f.role or "",
                 included=f.included,
                 skip_reason=f.skip_reason,
             )

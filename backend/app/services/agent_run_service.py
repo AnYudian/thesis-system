@@ -62,15 +62,21 @@ async def run(db: AsyncSession, review_id: int) -> AgentReview:
     settings = get_settings()
     files: list[UploadFile] = []
     for item in included:
-        material = await db.get(Material, item.material_id) if item.material_id else None
-        if material is None:
+        if item.material_id:
+            material = await db.get(Material, item.material_id)
+            rel_path = material.stored_path if material else None
+        else:
+            # 生成件（指导记录导出）没有 materials 行，用明细里记的路径
+            material = None
+            rel_path = item.stored_path
+        if not rel_path or not (settings.upload_path / rel_path).exists():
             review.status = AiRunStatus.FAILED.value
-            review.error = f"材料不存在：{item.file_name}"
+            review.error = f"材料文件缺失：{item.file_name}"
             review.error_code = "material_missing"
             await db.commit()
             return review
         files.append(
-            UploadFile(path=settings.upload_path / material.stored_path, name=item.file_name, role=item.role)
+            UploadFile(path=settings.upload_path / rel_path, name=item.file_name, role=item.role or None)
         )
 
     review.status = AiRunStatus.RUNNING.value

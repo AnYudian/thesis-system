@@ -88,6 +88,9 @@ class AgentReviewItem(Base, TimestampMixin):
     material_id: Mapped[int | None] = mapped_column(
         ForeignKey("materials.id", ondelete="SET NULL"), index=True
     )
+    # 指导记录导出件、聊天截图没有 materials 行，必须自己记住磁盘路径，
+    # 否则提交时无从取文件
+    stored_path: Mapped[str | None] = mapped_column(String(500))
 
     stage: Mapped[str] = mapped_column(String(24), nullable=False)
     material_version: Mapped[int | None] = mapped_column(Integer)

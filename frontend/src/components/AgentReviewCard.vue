@@ -33,6 +33,19 @@ const running = computed(() => review.value?.status === 'QUEUED' || review.value
 const canSubmit = computed(() => (preview.value?.total_files ?? 0) > 0 && !running.value && !submitting.value)
 const result = computed(() => review.value?.result ?? null)
 const checks = computed<AgentCheck[]>(() => (result.value?.checks as AgentCheck[]) ?? [])
+const passedCount = computed(() => checks.value.filter((c) => statusType(c.status) === 'success').length)
+const progressInfo = computed(() => (result.value?.project_progress as Record<string, unknown>) ?? null)
+const findings = computed(() => (result.value?.findings as { title?: string; outcome?: string; analysis?: string }[]) ?? [])
+const searches = computed(
+  () => ((result.value?.knowledge as { searches?: { query?: string; status?: string; note?: string }[] })?.searches ?? []),
+)
+const OUTCOME_LABELS: Record<string, string> = {
+  no_new_evidence: '无新证据',
+  unconfirmed: '待核验',
+  improved: '有改善',
+  still_present: '问题仍存在',
+  new_progress: '新增进展',
+}
 const suggestions = computed<string[]>(() => {
   const list = result.value?.suggestions ?? []
   return list.map((s) => (typeof s === 'string' ? s : String((s as { text?: string }).text ?? '')))
@@ -183,6 +196,12 @@ onBeforeUnmount(stopPolling)
         <span v-if="review?.model" class="meta">{{ review.model }}</span>
       </div>
 
+      <div v-if="checks.length" class="bar">
+        <span class="bar-pass" :style="{ flex: passedCount || 0.001 }" :title="`通过 ${passedCount}`" />
+        <span class="bar-fail" :style="{ flex: review?.check_failed || 0.001 }" :title="`需修改 ${review?.check_failed}`" />
+        <span class="bar-pending" :style="{ flex: review?.check_pending || 0.001 }" :title="`待确认 ${review?.check_pending}`" />
+      </div>
+
       <ul class="checks">
         <li v-for="(c, i) in checks" :key="i">
           <div class="check-head" @click="expanded = expanded === i ? null : i">
@@ -198,6 +217,37 @@ onBeforeUnmount(stopPolling)
           </div>
         </li>
       </ul>
+
+      <div v-if="progressInfo" class="block">
+        <h4>总体进度</h4>
+        <p>
+          状态：{{ progressInfo.status === 'analyzed' ? '已分析' : progressInfo.status }}
+          · 历史事项 {{ progressInfo.finding_count ?? 0 }} 项
+          · 交付物核验：{{ progressInfo.artifact_verification === 'not_verified' ? '未核验' : progressInfo.artifact_verification }}
+        </p>
+      </div>
+
+      <div v-if="findings.length" class="block">
+        <h4>与上次对比</h4>
+        <p v-for="(f, i) in findings" :key="i" class="finding">
+          <el-tag size="small" effect="plain" :type="f.outcome === 'improved' ? 'success' : f.outcome === 'still_present' ? 'danger' : 'info'">
+            {{ OUTCOME_LABELS[f.outcome ?? ''] ?? f.outcome }}
+          </el-tag>
+          <span>{{ f.title }}</span>
+          <em v-if="f.analysis">{{ f.analysis }}</em>
+        </p>
+      </div>
+
+      <div v-if="searches.length" class="block">
+        <h4>规范检索</h4>
+        <p v-for="(s, i) in searches" :key="i" class="search">
+          <el-tag size="small" :type="s.status === 'matched' ? 'success' : 'info'" effect="plain">
+            {{ s.status === 'matched' ? '命中' : '未命中' }}
+          </el-tag>
+          <span>检索：{{ s.query }}</span>
+          <em v-if="s.note">{{ s.note }}</em>
+        </p>
+      </div>
 
       <div v-if="suggestions.length" class="suggests">
         <h4>建议</h4>
@@ -389,6 +439,51 @@ onBeforeUnmount(stopPolling)
   padding: 8px 10px;
   border-left: 3px solid var(--el-border-color);
   background: var(--el-fill-color-lighter);
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.bar {
+  display: flex;
+  height: 6px;
+  margin: 10px 0 4px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--el-fill-color-lighter);
+}
+.bar-pass {
+  background: #3f7d5a;
+}
+.bar-fail {
+  background: #a33c2a;
+}
+.bar-pending {
+  background: #c6a86b;
+}
+.block {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+.block h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.block p {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.finding,
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.finding em,
+.search em {
+  flex-basis: 100%;
+  font-style: normal;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }

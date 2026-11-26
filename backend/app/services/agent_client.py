@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,7 +35,8 @@ class AgentError(Exception):
 class UploadFile:
     path: Path
     name: str
-    role: str
+    # None 表示让服务方自动分类（截图、代码包必须这样传）
+    role: str | None
 
 
 def _client() -> httpx.AsyncClient:
@@ -81,11 +83,10 @@ async def submit(files: list[UploadFile], project_id: str) -> dict:
             fh = open(f.path, "rb")  # noqa: SIM115 - 需要在请求期间保持打开
             handles.append(fh)
             multipart.append(("files", (f.name, fh, "application/octet-stream")))
-        data = {
-            "project_id": project_id,
-            # roles 与上传顺序一一对应，对方按它决定用哪套规则
-            "roles": "[" + ",".join(f'"{f.role}"' for f in files) + "]",
-        }
+        # roles 与上传顺序一一对应；None 必须序列化成 JSON null，
+        # 传成字符串 "null" 会被对方判成非法分类
+        roles = [f.role for f in files]
+        data = {"project_id": project_id, "roles": json.dumps(roles, ensure_ascii=False)}
         async with _client() as client:
             resp = await client.post("/reviews", files=multipart, data=data)
         return _check(resp)
