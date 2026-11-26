@@ -5,6 +5,7 @@ import { ArrowLeft, Download } from '@element-plus/icons-vue'
 
 import ReviewDecisionDialog from '@/components/ReviewDecisionDialog.vue'
 import AiReviewPanel from '@/components/AiReviewPanel.vue'
+import AgentReviewCard from '@/components/AgentReviewCard.vue'
 import { METHOD_LABELS, guidanceApi, type GuidanceRecord, type GuidanceSummary } from '@/api/guidance'
 import { materialsApi, type Material } from '@/api/materials'
 import { reviewsApi, type ReviewAction, type ReviewTarget, type StageReview } from '@/api/reviews'
@@ -329,6 +330,8 @@ onMounted(loadAll)
       </section>
 
       <AiReviewPanel :student-id="studentId" :can-rerun="isTeacher || auth.role === 'ADMIN'" />
+
+      <AgentReviewCard :student-id="studentId" :stage="detail.current_stage" />
 
       <section v-if="isTeacher && detail.status !== 'ARCHIVED'" class="panel action-panel">
         <header class="panel-head">
