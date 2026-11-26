@@ -59,6 +59,27 @@ class Settings(BaseSettings):
     # 送入模型的正文字数上限：开题报告一般不够这个数，超出只截断并提示
     ai_max_chars: int = 24000
 
+    # ---- 智能审阅服务（外部 HTTP 接口，按「学生+环节」打包送审）----
+    # 地址与令牌只放配置，不写进代码：迁移到公司服务器时只改环境变量
+    agent_enabled: bool = False
+    agent_base_url: str = "https://10.96.20.67:9443/api/v1"
+    agent_token: str = ""
+    # 对方用的是 Caddy 自签证书且 12 小时一换，只能跳过校验；
+    # 正式环境应换成可信证书后把这个开关关掉
+    agent_verify_tls: bool = False
+    agent_timeout_seconds: int = 60
+    # 对方串行处理，实测单份约 3 分 45 秒；轮询间隔和最长等待都按这个量级设
+    agent_poll_interval: int = 10
+    agent_max_wait_minutes: int = 60
+    # 对方当前只收这些格式；PDF 待其修复后再加进来
+    agent_supported_ext: str = "docx,png,jpg,jpeg,zip"
+    agent_max_files: int = 10
+    agent_max_file_mb: int = 2
+
+    @property
+    def agent_supported_set(self) -> set[str]:
+        return {e.strip().lower().lstrip(".") for e in self.agent_supported_ext.split(",") if e.strip()}
+
     @property
     def upload_path(self) -> Path:
         """上传目录的绝对路径。相对路径一律相对于项目根目录，而不是启动目录。"""

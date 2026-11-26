@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.agent_reviews import router as agent_reviews_router
 from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.config import router as config_router
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(guidance_router, prefix="/api")
     app.include_router(reminders_router, prefix="/api")
     app.include_router(ai_router, prefix="/api")
+    app.include_router(agent_reviews_router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
     async def index() -> ApiResponse:
