@@ -1,3 +1,5 @@
+import { ElMessage } from 'element-plus'
+
 import http, { del, get } from './http'
 
 export type GuidanceMethod = 'MEET' | 'ONLINE'
@@ -95,11 +97,17 @@ export const guidanceApi = {
     URL.revokeObjectURL(url)
   },
 
-  /** PDF 这类没法直接内嵌预览的，仍然新窗口打开 */
+  /** PDF / 视频这类没法直接内嵌预览的，仍然新窗口打开 */
   async openEvidence(record: GuidanceRecord) {
-    const url = await guidanceApi.evidenceUrl(record)
-    window.open(url, '_blank')
-    // 新窗口已经接管这张图，稍后回收即可，避免内存里堆 blob
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    // 证据可能是几十 MB 的视频，下载期间必须给反馈，否则看起来像卡死
+    const tip = ElMessage({ message: '正在读取证据，文件较大时请稍候…', type: 'info', duration: 0 })
+    try {
+      const url = await guidanceApi.evidenceUrl(record)
+      window.open(url, '_blank')
+      // 新窗口已经接管，稍后回收即可，避免内存里堆 blob
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } finally {
+      tip.close()
+    }
   },
 }
