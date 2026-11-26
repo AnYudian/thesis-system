@@ -63,7 +63,8 @@ class PackageFileOut(BaseModel):
     material_version: int
     file_name: str
     file_size: int
-    role: str
+    # 证据类文件由对方自动分类，role 为空
+    role: str | None
     included: bool
     skip_reason: str | None
     generated: bool = False
