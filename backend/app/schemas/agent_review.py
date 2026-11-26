@@ -58,7 +58,7 @@ class AgentReviewPage(BaseModel):
 
 
 class PackageFileOut(BaseModel):
-    material_id: int
+    material_id: int | None
     stage: str
     material_version: int
     file_name: str
@@ -66,6 +66,7 @@ class PackageFileOut(BaseModel):
     role: str
     included: bool
     skip_reason: str | None
+    generated: bool = False
 
 
 class PackagePreview(BaseModel):

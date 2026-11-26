@@ -121,6 +121,7 @@ async def preview(
                     role=f.role,
                     included=f.included,
                     skip_reason=f.skip_reason,
+                    generated=f.generated,
                 )
                 for f in pkg.files
             ],

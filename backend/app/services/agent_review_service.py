@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -21,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.agent_review import AgentReview, AgentReviewItem
-from app.models.enums import AiRunStatus, Stage
+from app.models.enums import GUIDANCE_METHOD_LABELS, AiRunStatus, GuidanceMethod, Stage
+from app.models.guidance import GuidanceRecord
 from app.models.material import Material
 from app.models.student import Student
+from app.services import docx_builder
 
 # 环节与对方 roles 的映射。对方只认这四种，其余一律 other。
 ROLE_BY_STAGE: dict[str, str] = {
@@ -54,7 +57,8 @@ STAGE_LABELS: dict[str, str] = {
 
 @dataclass
 class PackageFile:
-    material_id: int
+    # 指导记录导出件、聊天截图没有对应的 materials 行，用 None 而不是 0（0 会撞外键）
+    material_id: int | None
     stage: str
     version: int
     file_name: str
@@ -63,6 +67,8 @@ class PackageFile:
     included: bool = True
     skip_reason: str | None = None
     abs_path: Path | None = None
+    # 由系统现场生成（如指导记录汇总），不是学生上传的材料
+    generated: bool = False
 
 
 @dataclass
@@ -79,8 +85,12 @@ class Package:
 
     @property
     def missing_stages(self) -> list[str]:
-        """目标环节没有材料时，告诉调用方缺什么，而不是送一个空包。"""
-        if any(f.included and f.stage == self.stage for f in self.files):
+        """目标环节没有学生自己上传的材料时，告诉调用方缺什么。
+
+        只有 material_id 不为空的才是学生上传的正式材料；指导记录导出件、
+        聊天截图这类过程材料不能替代中期报告本身。
+        """
+        if any(f.included and f.stage == self.stage and f.material_id is not None for f in self.files):
             return []
         return [self.stage]
 
@@ -109,6 +119,94 @@ async def _latest_by_stage(db: AsyncSession, student_id: int, stages: list[str])
     for m in rows:
         latest.setdefault(m.stage, m)
     return latest
+
+
+async def _guidance_package(db: AsyncSession, student: Student, stage: str) -> tuple[list[PackageFile], list[str]]:
+    """把指导记录导成 docx，并把沟通证据（截图/代码包）一起纳入送审。
+
+    为什么必须导出：对方只认 docx/图片/zip，而指导记录是数据库里的结构化数据。
+    为什么证据要挑：对方单次最多 10 份、每份 2MB，全带会超限，按时间从近到远取。
+    """
+    settings = get_settings()
+    records = (
+        await db.execute(
+            select(GuidanceRecord)
+            .where(GuidanceRecord.student_id == student.id)
+            .order_by(GuidanceRecord.happened_at.desc())
+            .limit(200)
+        )
+    ).scalars().all()
+    if not records:
+        return [], ["指导记录：还没有登记任何指导记录，中期审查缺少沟通依据"]
+
+    warnings: list[str] = []
+    rows: list[dict] = []
+    for r in reversed(records):  # 文档按时间正序，读起来更像一份过程记录
+        try:
+            method = GUIDANCE_METHOD_LABELS.get(GuidanceMethod(r.method), r.method)
+        except ValueError:
+            method = r.method
+        rows.append(
+            {
+                "happened_at": r.happened_at.strftime("%Y-%m-%d"),
+                "method": method,
+                "stage_label": STAGE_LABELS.get(r.stage, r.stage),
+                "content": r.content,
+                "evidence_name": r.evidence_name,
+            }
+        )
+
+    data = docx_builder.guidance_docx(student.name, student.sno, STAGE_LABELS.get(stage, "阶段"), rows)
+    gen_dir = settings.upload_path / str(student.id) / "generated"
+    gen_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"指导记录汇总-{datetime.now():%Y%m%d}.docx"
+    path = gen_dir / file_name
+    path.write_bytes(data)
+
+    files = [
+        PackageFile(
+            material_id=None,
+            stage=stage,
+            version=0,
+            file_name=file_name,
+            file_size=len(data),
+            role="progress",
+            abs_path=path,
+            generated=True,
+        )
+    ]
+
+    supported = settings.agent_supported_set
+    max_bytes = settings.agent_max_file_mb * 1024 * 1024
+    skipped_formats: set[str] = set()
+    for r in records:  # 最近的证据优先
+        if not r.evidence_name or not r.evidence_path:
+            continue
+        ext = Path(r.evidence_name).suffix.lower().lstrip(".")
+        item = PackageFile(
+            material_id=None,
+            stage=r.stage,
+            version=0,
+            file_name=r.evidence_name,
+            file_size=r.evidence_size or 0,
+            role="other",
+            abs_path=settings.upload_path / r.evidence_path,
+        )
+        if ext not in supported:
+            item.included = False
+            item.skip_reason = f"证据格式 .{ext or '未知'} 不支持智能审阅"
+            skipped_formats.add(ext or "未知")
+        elif r.evidence_size and r.evidence_size > max_bytes:
+            item.included = False
+            item.skip_reason = f"证据 {r.evidence_size / 1024 / 1024:.1f}MB 超过 2MB 限制"
+        elif not item.abs_path.exists():
+            item.included = False
+            item.skip_reason = "证据文件缺失"
+        files.append(item)
+
+    if skipped_formats:
+        warnings.append(f"有证据因格式不支持未送审：{', '.join(sorted(skipped_formats))}")
+    return files, warnings
 
 
 async def build_package(db: AsyncSession, student_id: int, stage: str) -> Package:
@@ -154,6 +252,13 @@ async def build_package(db: AsyncSession, student_id: int, stage: str) -> Packag
             item.skip_reason = "磁盘上的文件缺失"
         candidates.append(item)
 
+    # 中期/定稿：把指导记录导成一份文档，并把沟通证据（截图/代码包）一起送。
+    # 对方只能读 docx/图片/zip，指导记录在库里是结构化数据，必须现场导出。
+    if stage in (Stage.MIDTERM.value, Stage.THESIS.value):
+        guidance_files, guidance_warnings = await _guidance_package(db, student, stage)
+        candidates.extend(guidance_files)
+        pkg.warnings.extend(guidance_warnings)
+
     # 限额取舍：目标环节在前，天然优先保留
     kept = 0
     for item in candidates:
@@ -169,6 +274,9 @@ async def build_package(db: AsyncSession, student_id: int, stage: str) -> Packag
     pkg.files = candidates
     if kept == 0:
         pkg.warnings.append("本次没有可送审的文件，请先上传受支持格式的材料")
+    elif pkg.missing_stages:
+        label = STAGE_LABELS.get(stage, stage)
+        pkg.warnings.append(f"缺少{label}报告（学生未上传），本次只送指导记录与过程证据")
     return pkg
 
 
