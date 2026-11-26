@@ -6,7 +6,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,12 +23,16 @@ DBDep = Annotated[AsyncSession, Depends(get_db)]
 
 async def get_current_user(
     db: DBDep,
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> User:
-    if credentials is None:
+    # 兜底：浏览器直接打开文件（视频/PDF 预览）时带不了请求头，
+    # 允许把令牌放查询参数里。仅用于文件类只读接口，接口清单里其余接口仍要求请求头。
+    raw_token = credentials.credentials if credentials else request.query_params.get("token")
+    if not raw_token:
         raise AppError(40100, "请先登录", http_status=401)
 
-    payload = decode_token(credentials.credentials)
+    payload = decode_token(raw_token)
     try:
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:

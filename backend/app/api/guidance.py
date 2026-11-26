@@ -168,6 +168,8 @@ async def download_evidence(
         path,
         filename=record.evidence_name or f"guidance-{record.id}",
         media_type=record.evidence_type or "application/octet-stream",
+        # inline 才会在浏览器里直接播放/预览；attachment 会变成下载
+        content_disposition_type="inline",
     )
 
 
