@@ -77,13 +77,14 @@ export const guidanceApi = {
 
   /** 证据接口要带 token，只能先取 blob 再转成浏览器能显示的临时地址 */
   async evidenceUrl(record: GuidanceRecord): Promise<string> {
-    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob' })
+    // timeout: 0 —— 视频/压缩包可能几十 MB，不能用全局 15 秒超时
+    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob', timeout: 0 })
     return URL.createObjectURL(res.data as Blob)
   },
 
   /** 压缩包 / 代码文件浏览器没法预览，直接按原文件名下载 */
   async downloadEvidence(record: GuidanceRecord) {
-    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob' })
+    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob', timeout: 0 })
     const url = URL.createObjectURL(res.data as Blob)
     const a = document.createElement('a')
     a.href = url

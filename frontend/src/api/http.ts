@@ -21,9 +21,16 @@ http.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiEnvelope<unknown>>) => {
     const status = error.response?.status
+    // 超时和"连不上"是两回事：证据文件几十 MB 时超时很常见，
+    // 原先统一提示"无法连接服务器"会误导排查方向
+    const timedOut = error.code === 'ECONNABORTED'
     const message =
       error.response?.data?.message ??
-      (error.response ? '后端服务暂时不可用，请确认它已启动（8000 端口）' : '无法连接服务器，请检查网络或后端是否已启动')
+      (timedOut
+        ? '请求超时：文件较大或网络较慢，请重试'
+        : error.response
+          ? '后端服务暂时不可用，请确认它已启动（8000 端口）'
+          : '无法连接服务器，请检查网络或后端是否已启动')
 
     if (status === 401) {
       localStorage.removeItem('token')
