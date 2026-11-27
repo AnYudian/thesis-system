@@ -74,6 +74,17 @@ const verdict = computed(() => {
   return { text: `未发现需修改项${checks.value.length ? `（核查 ${checks.value.length} 条全部通过）` : ''}`, cls: 'is-ok' }
 })
 
+// 聊天分析类结论对方没给 outcome，用「新发现」标明它来自本轮比对
+const outcomeLabel = (f: { outcome?: string; source_kind?: string }) =>
+  OUTCOME_LABELS[f.outcome ?? ''] ?? (f.source_kind === 'chat_analysis' ? '新发现' : '')
+
+const activeFindings = computed(
+  () => findings.value.filter((f) => f.outcome !== 'no_new_evidence'),
+)
+const staleFindings = computed(
+  () => findings.value.filter((f) => f.outcome === 'no_new_evidence'),
+)
+
 const SOURCE_LABELS: Record<string, string> = {
   chat_analysis: '聊天分析',
   project_progress: '进度分析',
@@ -84,6 +95,7 @@ const searches = computed(
 )
 const OUTCOME_LABELS: Record<string, string> = {
   no_new_evidence: '无新证据',
+  needs_verification: '待核实',
   unconfirmed: '待核验',
   improved: '有改善',
   still_present: '问题仍存在',
@@ -364,133 +376,165 @@ onBeforeUnmount(stopPolling)
       </el-button>
 
       <div v-if="showDetails" class="details">
-        <h4 class="details-title">核查明细</h4>
-        <ul class="checks">
-        <li v-for="(c, i) in checks" :key="i">
-          <div class="check-head" @click="expanded = expanded === i ? null : i">
-            <el-tag size="small" :type="statusType(c.status)">{{ c.status }}</el-tag>
-            <span class="title">{{ c.title }}</span>
-            <span class="toggle">{{ expanded === i ? '收起' : '展开' }}</span>
-          </div>
-          <div v-if="expanded === i" class="check-body">
-            <p>{{ c.analysis }}</p>
-            <blockquote v-for="(e, j) in c.evidence ?? []" :key="j">
-              {{ e.quote }}
-            </blockquote>
-          </div>
-        </li>
-      </ul>
+        <section class="mod">
+          <h4 class="mod-title">
+            <i class="mod-dot" />核查明细
+            <em>{{ checks.length }} 条</em>
+          </h4>
+          <ul class="checks">
+            <li v-for="(c, i) in checks" :key="i">
+              <div class="check-head" @click="expanded = expanded === i ? null : i">
+                <el-tag size="small" :type="statusType(c.status)">{{ c.status }}</el-tag>
+                <span class="title">{{ c.title }}</span>
+                <span class="toggle">{{ expanded === i ? '收起' : '展开' }}</span>
+              </div>
+              <div v-if="expanded === i" class="check-body">
+                <p>{{ c.analysis }}</p>
+                <blockquote v-for="(e, j) in c.evidence ?? []" :key="j">
+                  {{ e.quote }}
+                </blockquote>
+              </div>
+            </li>
+          </ul>
+        </section>
 
-      <div v-if="Object.keys(materialTypes).length || chatShots.length || chatAnalysis" class="block">
-        <h4>分析过程</h4>
-        <p v-if="Object.keys(materialTypes).length" class="trace">
-          材料识别：
-          <span v-for="(t, k) in materialTypes" :key="k" class="trace-item">
-            {{ k }} → {{ TYPE_LABELS[t] ?? t }}
-          </span>
-        </p>
-        <p v-for="(s, i) in chatShots" :key="i" class="trace">
-          截图解析：{{ s.name }}
-          <span class="meta">
-            · {{ s.ocr_engine }} · {{ s.width }}×{{ s.height }}
-            · 识别消息 {{ (s.messages ?? []).length }} 条
-            <template v-if="confidenceRange"> · 置信度 {{ confidenceRange }}</template>
-            <template v-if="(s.unclassified_regions ?? []).length">
-              · 未归类文本块 {{ (s.unclassified_regions ?? []).length }}
-            </template>
-          </span>
-        </p>
-        <div v-for="(s, i) in chatShots" :key="'m' + i" class="msgs">
-          <div
-            v-for="(m, j) in (s.messages ?? []).slice(0, showAllMsgs ? 50 : 3)"
-            :key="j"
-            class="msg"
-          >
-            <span class="msg-id">{{ m.message_id ?? `M${j + 1}` }}</span>
-            <span class="msg-speaker">{{ speakerOf(m) }}</span>
-            <span class="msg-text">{{ m.text }}</span>
-          </div>
-          <el-button
-            v-if="(s.messages ?? []).length > 3"
-            link
-            type="primary"
-            size="small"
-            @click="showAllMsgs = !showAllMsgs"
-          >
-            {{ showAllMsgs ? '收起消息' : `展开全部 ${(s.messages ?? []).length} 条` }}
-          </el-button>
-        </div>
-        <p v-if="chatAnalysis" class="trace">
-          聊天分析：
-          <el-tag size="small" effect="plain" :type="chatAnalysis.status === 'analyzed' ? 'success' : 'info'">
-            {{ CHAT_STATUS_LABELS[String(chatAnalysis.status)] ?? chatAnalysis.status }}
-          </el-tag>
-          <span v-if="chatAnalysis.note" class="meta">{{ chatAnalysis.note }}</span>
-        </p>
-      </div>
-
-      <div v-if="progressInfo" class="block">
-        <h4>总体进度</h4>
-        <p>
-          状态：{{ progressInfo.status === 'analyzed' ? '已分析' : progressInfo.status }}
-          · 历史事项 {{ progressInfo.finding_count ?? 0 }} 项
-          · 交付物核验：{{ progressInfo.artifact_verification === 'not_verified' ? '未核验' : progressInfo.artifact_verification }}
-        </p>
-      </div>
-
-      <div v-if="crossFindings.length" class="block cross">
-        <h4>跨材料核验 <span class="cross-count">{{ crossFindings.length }} 项</span></h4>
-        <p class="cross-hint">同一结论能同时引用两份及以上材料，说明它做了交叉比对。</p>
-        <div v-for="(f, i) in crossFindings" :key="'c' + i" class="cross-item">
-          <div class="cross-title">
-            <strong>{{ f.title }}</strong>
-            <span class="cross-link">
-              {{ [...new Set((f.evidence ?? []).map((e) => e.name))].join(' ↔ ') }}
+        <section v-if="Object.keys(materialTypes).length || chatShots.length || chatAnalysis" class="mod">
+          <h4 class="mod-title">
+            <i class="mod-dot" />分析过程
+            <em>材料识别 · 截图解析 · 聊天分析</em>
+          </h4>
+          <p v-if="Object.keys(materialTypes).length" class="trace">
+            材料识别：
+            <span v-for="(t, k) in materialTypes" :key="k" class="trace-item">
+              {{ k }} → {{ TYPE_LABELS[t] ?? t }}
             </span>
+          </p>
+          <p v-for="(s, i) in chatShots" :key="i" class="trace">
+            截图解析：<b>{{ s.name }}</b>
+            <span class="meta">
+              · {{ s.ocr_engine }} · {{ s.width }}×{{ s.height }}
+              · 识别消息 {{ (s.messages ?? []).length }} 条
+              <template v-if="confidenceRange"> · 置信度 {{ confidenceRange }}</template>
+              <template v-if="(s.unclassified_regions ?? []).length">
+                · 未归类文本块 {{ (s.unclassified_regions ?? []).length }}
+              </template>
+            </span>
+          </p>
+          <div v-for="(s, i) in chatShots" :key="'m' + i" class="msgs">
+            <div
+              v-for="(m, j) in (s.messages ?? []).slice(0, showAllMsgs ? 50 : 3)"
+              :key="j"
+              class="msg"
+            >
+              <span class="msg-id">{{ m.message_id ?? `M${j + 1}` }}</span>
+              <span class="msg-speaker" :class="m.direction === 'right' ? 'is-teacher' : 'is-student'">
+                {{ speakerOf(m) }}
+              </span>
+              <span class="msg-text">{{ m.text }}</span>
+            </div>
+            <el-button
+              v-if="(s.messages ?? []).length > 3"
+              link
+              type="primary"
+              size="small"
+              @click="showAllMsgs = !showAllMsgs"
+            >
+              {{ showAllMsgs ? '收起消息' : `展开全部 ${(s.messages ?? []).length} 条` }}
+            </el-button>
           </div>
-          <p class="cross-analysis">{{ f.analysis }}</p>
-          <div
-            v-for="(e, j) in (f.evidence ?? []).slice(0, 4)"
-            :key="'ce' + j"
-            class="cross-ev"
-          >
-            <span class="cross-doc">{{ e.name }}<template v-if="e.message_id"> · {{ e.message_id }}</template></span>
-            <span class="cross-quote">{{ e.quote }}</span>
+          <p v-if="chatAnalysis" class="trace">
+            聊天分析：
+            <el-tag size="small" effect="plain" :type="chatAnalysis.status === 'analyzed' ? 'success' : 'info'">
+              {{ CHAT_STATUS_LABELS[String(chatAnalysis.status)] ?? chatAnalysis.status }}
+            </el-tag>
+            <span v-if="chatAnalysis.note" class="meta">{{ chatAnalysis.note }}</span>
+          </p>
+        </section>
+
+        <section v-if="progressInfo" class="mod">
+          <h4 class="mod-title"><i class="mod-dot" />总体进度<em>对方返回的进度分析</em></h4>
+          <p class="kv">
+            <span>状态</span>
+            <b>{{ progressInfo.status === 'analyzed' ? '已分析' : progressInfo.status }}</b>
+            <span>历史事项</span>
+            <b>{{ progressInfo.finding_count ?? 0 }} 项</b>
+            <span>交付物核验</span>
+            <b>{{ progressInfo.artifact_verification === 'not_verified' ? '未核验' : progressInfo.artifact_verification }}</b>
+          </p>
+        </section>
+
+        <section v-if="crossFindings.length" class="mod mod-cross">
+          <h4 class="mod-title">
+            <i class="mod-dot" />跨材料核验
+            <em>{{ crossFindings.length }} 项</em>
+          </h4>
+          <p class="mod-hint">同一结论同时引用两份及以上材料，说明它做了交叉比对。</p>
+          <div v-for="(f, i) in crossFindings" :key="'c' + i" class="cross-item">
+            <div class="cross-title">
+              <strong>{{ f.title }}</strong>
+              <span class="cross-link">
+                {{ [...new Set((f.evidence ?? []).map((e) => e.name))].join(' ↔ ') }}
+              </span>
+            </div>
+            <p class="cross-analysis">{{ f.analysis }}</p>
+            <div
+              v-for="(e, j) in (f.evidence ?? []).slice(0, 4)"
+              :key="'ce' + j"
+              class="cross-ev"
+            >
+              <span class="cross-doc">{{ e.name }}<template v-if="e.message_id"> · {{ e.message_id }}</template></span>
+              <span class="cross-quote">{{ e.quote }}</span>
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div v-if="findings.length" class="block">
-        <h4>与上次对比</h4>
-        <p v-for="(f, i) in findings" :key="i" class="finding">
-          <el-tag size="small" effect="plain" :type="f.outcome === 'improved' ? 'success' : f.outcome === 'still_present' ? 'danger' : 'info'">
-            {{ OUTCOME_LABELS[f.outcome ?? ''] ?? f.outcome }}
-          </el-tag>
-          <el-tag v-if="f.source_kind" size="small" type="info" effect="plain">
-            {{ SOURCE_LABELS[f.source_kind] ?? f.source_kind }}
-          </el-tag>
-          <span>{{ f.title }}</span>
-          <em v-if="f.analysis">{{ f.analysis }}</em>
-          <em v-for="(e, j) in (f.evidence ?? []).slice(0, 2)" :key="'e' + j" class="cite">
-            证据：{{ e.quote }}<template v-if="e.name">（{{ e.name }}<template v-if="e.message_id"> {{ e.message_id }}</template>）</template>
-          </em>
-        </p>
-      </div>
+        <section v-if="findings.length" class="mod">
+          <h4 class="mod-title">
+            <i class="mod-dot" />与上次对比
+            <em>{{ activeFindings.length }} 项需关注</em>
+          </h4>
+          <div v-for="(f, i) in activeFindings" :key="'f' + i" class="finding-card">
+            <div class="finding-head">
+              <el-tag
+                v-if="outcomeLabel(f)"
+                size="small"
+                effect="plain"
+                :type="f.outcome === 'improved' ? 'success' : f.outcome === 'still_present' ? 'danger' : 'warning'"
+              >
+                {{ outcomeLabel(f) }}
+              </el-tag>
+              <el-tag v-if="f.source_kind" size="small" type="info" effect="plain">
+                {{ SOURCE_LABELS[f.source_kind] ?? f.source_kind }}
+              </el-tag>
+              <strong>{{ f.title }}</strong>
+            </div>
+            <p v-if="f.analysis" class="finding-analysis">{{ f.analysis }}</p>
+            <div v-for="(e, j) in (f.evidence ?? []).slice(0, 2)" :key="'fe' + j" class="finding-ev">
+              <span class="cross-doc">{{ e.name }}<template v-if="e.message_id"> · {{ e.message_id }}</template></span>
+              <span class="cross-quote">{{ e.quote }}</span>
+            </div>
+          </div>
+          <p v-if="staleFindings.length" class="stale">
+            另有 {{ staleFindings.length }} 项本轮没有新证据：{{ staleFindings.map((f) => f.title).join('、') }}
+          </p>
+        </section>
 
-      <div class="block">
-        <h4>规范检索</h4>
-        <p v-if="!searches.length" class="empty-hint">
-          规范库尚未接入，本项暂无依据；接入后这里会显示命中的条款与原文。
-        </p>
-        <p v-for="(s, i) in searches" :key="i" class="search">
-          <el-tag size="small" :type="s.status === 'matched' ? 'success' : 'info'" effect="plain">
-            {{ s.status === 'matched' ? '命中' : '未命中' }}
-          </el-tag>
-          <span>检索：{{ s.query }}</span>
-          <em v-if="s.note">{{ s.note }}</em>
-        </p>
-      </div>
-
+        <section class="mod">
+          <h4 class="mod-title">
+            <i class="mod-dot" />规范检索
+            <em>{{ searches.length ? `${searches.length} 次` : '规范库未接入' }}</em>
+          </h4>
+          <p v-if="!searches.length" class="mod-hint">
+            规范库尚未接入，本项暂无依据；接入后这里会显示命中的条款与原文。
+          </p>
+          <div v-for="(s, i) in searches" :key="'s' + i" class="search-row">
+            <el-tag size="small" :type="s.status === 'matched' ? 'success' : 'info'" effect="plain">
+              {{ s.status === 'matched' ? '命中' : '未命中' }}
+            </el-tag>
+            <span class="search-query">检索：{{ s.query }}</span>
+            <span v-if="s.note" class="search-note">{{ s.note }}</span>
+          </div>
+        </section>
       </div>
 
       <p class="time">
@@ -733,6 +777,116 @@ onBeforeUnmount(stopPolling)
   margin-top: 6px;
   padding-top: 8px;
   border-top: 1px dashed var(--el-border-color-lighter);
+}
+.mod {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--th-border-soft);
+  border-radius: 8px;
+  background: var(--th-surface);
+}
+.mod-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text);
+}
+.mod-title em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+.mod-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--th-accent);
+}
+.mod-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.mod-cross {
+  border-color: var(--th-accent-soft);
+  background: rgba(198, 168, 107, 0.06);
+}
+.kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+.kv span {
+  color: var(--el-text-color-secondary);
+}
+.kv b {
+  margin-right: 8px;
+  color: var(--th-text);
+}
+.finding-card {
+  padding: 8px 0;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+.finding-card:first-of-type {
+  border-top: none;
+}
+.finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.finding-head strong {
+  font-size: 13px;
+  color: var(--th-text);
+}
+.finding-analysis {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--th-text);
+}
+.finding-ev {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+.search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.search-query {
+  font-weight: 600;
+  color: var(--th-text);
+}
+.search-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.stale {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.msg-speaker.is-teacher {
+  color: var(--th-accent);
+}
+.msg-speaker.is-student {
+  color: #3f7d5a;
 }
 .details-title {
   margin: 4px 0 6px;
