@@ -258,10 +258,10 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 
 - 对方的核查项是**动态生成**的：同一份材料多次审阅，条目数量与措辞会变；
 - **规范库为空**：检索恒为 `no_match`，界面显示「规范库尚未接入」占位；
-- **代码 ZIP 会触发失败**：`model_tool_validation_failed`（4B 模型填不出 `record_project_progress` 的参数），已 A/B 定位，待服务方修复；
-- **PDF 可提交但审阅结果未验证**（曾出现 `model_unavailable`）；
+- ~~代码 ZIP 触发失败、PDF 未验证~~ **2026-11-27 已修复**：5 份材料（中期报告 docx + 开题 PDF + 指导记录 docx + 代码 ZIP + 聊天截图）3 分钟完成，代码包被识别为 `code_zip` 并产出代码级发现（`code_analysis`），PDF 6 页全部 `readable`；
 - 串行处理，单份约 3–4 分钟；一次只建议发起 1 个任务；
-- 对方证书 12 小时过期，每天可能短暂中断。
+- 对方证书 12 小时过期，每天可能短暂中断；
+- 本机开 VPN 时 `httpx` 会走系统代理，导致连不上局域网服务（curl 不受影响，容易误判为对方故障），`agent_client` 已固定 `trust_env=False`。
 
 ### 联调速查
 
