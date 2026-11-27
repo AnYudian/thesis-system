@@ -349,7 +349,11 @@ onMounted(loadAll)
         </ol>
       </section>
 
-      <AgentReviewCard :student-id="studentId" :stage="activeStage" />
+      <AgentReviewCard
+        :student-id="studentId"
+        :stage="activeStage"
+        :can-initiate="isViewingCurrent"
+      />
 
       <section
         v-if="isTeacher && detail.status !== 'ARCHIVED' && isViewingCurrent"

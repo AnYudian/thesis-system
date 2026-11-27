@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { aiApi } from '@/api/ai'
+import { STAGES } from '@/constants/stages'
 import {
   AGENT_STATUS_LABEL,
   createAgentReview,
@@ -20,7 +21,14 @@ import {
   type PackagePreview,
 } from '@/api/agentReviews'
 
-const props = defineProps<{ studentId: number; stage: string }>()
+const props = defineProps<{
+  studentId: number
+  stage: string
+  /** 只有学生当前所在环节才允许发起；历史/未来环节只读 */
+  canInitiate?: boolean
+}>()
+
+const stageLabel = computed(() => STAGES.find((s) => s.code === props.stage)?.short ?? props.stage)
 
 const preview = ref<PackagePreview | null>(null)
 const review = ref<AgentReview | null>(null)
@@ -34,7 +42,12 @@ let timer: number | undefined
 const statusLabel = computed(() => (review.value ? AGENT_STATUS_LABEL[review.value.status] : ''))
 const running = computed(() => review.value?.status === 'QUEUED' || review.value?.status === 'RUNNING')
 const canSubmit = computed(
-  () => aiEnabled.value && (preview.value?.total_files ?? 0) > 0 && !running.value && !submitting.value,
+  () =>
+    aiEnabled.value &&
+    props.canInitiate !== false &&
+    (preview.value?.total_files ?? 0) > 0 &&
+    !running.value &&
+    !submitting.value,
 )
 const result = computed(() => review.value?.result ?? null)
 const checks = computed<AgentCheck[]>(() => (result.value?.checks as AgentCheck[]) ?? [])
@@ -267,7 +280,15 @@ onBeforeUnmount(stopPolling)
       <div class="pkg-head">
         <span>本次将送 <strong>{{ preview?.total_files ?? 0 }}</strong> 份材料</span>
         <el-button type="primary" size="small" :loading="submitting" :disabled="!canSubmit" @click="submit">
-          {{ running ? '审阅中…' : aiEnabled ? '发起智能审阅' : '管理员已关闭' }}
+          {{
+            running
+              ? '审阅中…'
+              : !aiEnabled
+                ? '管理员已关闭'
+                : props.canInitiate === false
+                  ? '仅查看'
+                  : '发起智能审阅'
+          }}
         </el-button>
       </div>
       <ul v-if="preview?.files.length" class="pkg-list">
@@ -282,6 +303,9 @@ onBeforeUnmount(stopPolling)
       </ul>
       <p v-else class="empty">本环节还没有可送审的材料。</p>
       <p v-for="w in preview?.warnings ?? []" :key="w" class="warn">· {{ w }}</p>
+      <p v-if="props.canInitiate === false" class="warn">
+        · 当前查看的是{{ stageLabel }}，不是学生所在环节，只能查看历史结论，不能发起审阅
+      </p>
     </div>
 
     <div v-if="review?.error" class="err">
