@@ -51,6 +51,33 @@ const OUTCOME_LABELS: Record<string, string> = {
   still_present: '问题仍存在',
   new_progress: '新增进展',
 }
+// 对方返回但之前没展示的分析过程：材料识别、截图 OCR、聊天分析
+const materialTypes = computed(
+  () => (result.value?.material_types as Record<string, string>) ?? {},
+)
+const chatShots = computed(
+  () =>
+    (result.value?.chat_screenshots as {
+      name?: string
+      ocr_engine?: string
+      width?: number
+      height?: number
+      messages?: { text?: string; sender?: string; time?: string }[]
+      unclassified_regions?: unknown[]
+    }[]) ?? [],
+)
+const chatAnalysis = computed(() => (result.value?.chat_analysis as Record<string, unknown>) ?? null)
+const TYPE_LABELS: Record<string, string> = {
+  document: '文档',
+  chat_screenshot: '聊天截图',
+  code_archive: '代码包',
+  other: '其他',
+}
+const CHAT_STATUS_LABELS: Record<string, string> = {
+  analyzed: '已完成分析',
+  insufficient_evidence: '证据不足',
+  skipped: '未分析',
+}
 const suggestions = computed<string[]>(() => {
   const list = result.value?.suggestions ?? []
   return list.map((s) => (typeof s === 'string' ? s : String((s as { text?: string }).text ?? '')))
@@ -231,6 +258,39 @@ onBeforeUnmount(stopPolling)
           </div>
         </li>
       </ul>
+
+      <div v-if="Object.keys(materialTypes).length || chatShots.length || chatAnalysis" class="block">
+        <h4>分析过程</h4>
+        <p v-if="Object.keys(materialTypes).length" class="trace">
+          材料识别：
+          <span v-for="(t, k) in materialTypes" :key="k" class="trace-item">
+            {{ k }} → {{ TYPE_LABELS[t] ?? t }}
+          </span>
+        </p>
+        <p v-for="(s, i) in chatShots" :key="i" class="trace">
+          截图解析：{{ s.name }}
+          <span class="meta">
+            · {{ s.ocr_engine }} · {{ s.width }}×{{ s.height }}
+            · 识别消息 {{ (s.messages ?? []).length }} 条
+            <template v-if="(s.unclassified_regions ?? []).length">
+              · 未归类文本块 {{ (s.unclassified_regions ?? []).length }}
+            </template>
+          </span>
+        </p>
+        <div v-for="(s, i) in chatShots" :key="'m' + i">
+          <blockquote v-for="(m, j) in (s.messages ?? []).slice(0, 8)" :key="j">
+            <template v-if="m.time">[{{ m.time }}] </template>
+            <template v-if="m.sender">{{ m.sender }}：</template>{{ m.text }}
+          </blockquote>
+        </div>
+        <p v-if="chatAnalysis" class="trace">
+          聊天分析：
+          <el-tag size="small" effect="plain" :type="chatAnalysis.status === 'analyzed' ? 'success' : 'info'">
+            {{ CHAT_STATUS_LABELS[String(chatAnalysis.status)] ?? chatAnalysis.status }}
+          </el-tag>
+          <span v-if="chatAnalysis.note" class="meta">{{ chatAnalysis.note }}</span>
+        </p>
+      </div>
 
       <div v-if="progressInfo" class="block">
         <h4>总体进度</h4>
@@ -480,6 +540,18 @@ onBeforeUnmount(stopPolling)
   margin-top: 14px;
   padding-top: 10px;
   border-top: 1px dashed var(--el-border-color-lighter);
+}
+.trace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.trace-item {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--el-fill-color-lighter);
+  font-size: 12px;
 }
 .block h4 {
   margin: 0 0 6px;
