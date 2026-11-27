@@ -230,6 +230,33 @@ const CHAT_STATUS_LABELS: Record<string, string> = {
   insufficient_evidence: '证据不足',
   skipped: '未分析',
 }
+const MODEL_LABELS: [RegExp, string][] = [
+  [/qwen3[-_ ]?4b/i, '通义千问3 · 4B'],
+  [/qwen3[-_ ]?32b/i, '通义千问3 · 32B'],
+  [/qwen/i, '通义千问'],
+  [/deepseek/i, 'DeepSeek'],
+]
+const modelLabel = computed(() => {
+  const raw = review.value?.model ?? ''
+  if (!raw) return ''
+  for (const [re, label] of MODEL_LABELS) {
+    if (re.test(raw)) return label
+  }
+  return raw
+})
+const hasReview = computed(() => !!review.value)
+
+// 建议按 rule_id 与问题清单对齐，才能区分「需修改」「待确认」
+const suggestionItems = computed(() => {
+  const raw = (result.value?.suggestions ?? []) as (string | { text?: string; rule_id?: string })[]
+  const problems = (result.value?.problems ?? []) as { rule_id?: string; status?: string }[]
+  const statusOf = (rule?: string) =>
+    rule ? problems.find((p) => p.rule_id === rule)?.status : undefined
+  return raw.map((item) => {
+    if (typeof item === 'string') return { text: item, status: undefined }
+    return { text: String(item.text ?? ''), status: statusOf(item.rule_id) }
+  })
+})
 const suggestions = computed<string[]>(() => {
   const list = result.value?.suggestions ?? []
   return list.map((s) => (typeof s === 'string' ? s : String((s as { text?: string }).text ?? '')))
@@ -352,13 +379,22 @@ onBeforeUnmount(stopPolling)
           按「本环节 + 前置材料」打包送智能审阅服务；结论仅供参考，<b>是否通过仍由老师决定</b>。
         </p>
       </div>
-      <span v-if="review?.model" class="ai-model">{{ review.model }}</span>
+      <span v-if="review?.model" class="ai-model" :title="`原始标识：${review.model}`">
+        模型：{{ modelLabel }}
+      </span>
     </header>
 
     <div class="pkg">
       <div class="pkg-head">
         <span>本次将送 <strong>{{ preview?.total_files ?? 0 }}</strong> 份材料</span>
-        <el-button type="primary" size="small" :loading="submitting" :disabled="!canSubmit" @click="submit">
+        <el-button
+          type="primary"
+          size="small"
+          :plain="hasReview"
+          :loading="submitting"
+          :disabled="!canSubmit"
+          @click="submit"
+        >
           {{
             running
               ? '审阅中…'
@@ -366,7 +402,9 @@ onBeforeUnmount(stopPolling)
                 ? '管理员已关闭'
                 : props.canInitiate === false
                   ? '仅查看'
-                  : '发起智能审阅'
+                  : hasReview
+                    ? '重新审阅'
+                    : '发起智能审阅'
           }}
         </el-button>
       </div>
@@ -396,7 +434,7 @@ onBeforeUnmount(stopPolling)
         <span>核查点 {{ review?.check_total }} 个</span>
         <span class="bad">需修改 {{ review?.check_failed }}</span>
         <span class="warn-text">待确认 {{ review?.check_pending }}</span>
-        <span v-if="review?.model" class="meta">{{ review.model }}</span>
+        <span v-if="review?.model" class="meta">模型：{{ modelLabel }}</span>
       </div>
 
       <p class="counts-hint">「核查点」是 AI 按材料内容生成的检查条目，与上传了几份材料无关。</p>
@@ -407,9 +445,18 @@ onBeforeUnmount(stopPolling)
         <span class="bar-pending" :style="{ flex: review?.check_pending || 0.001 }" :title="`待确认 ${review?.check_pending}`" />
       </div>
 
-      <div v-if="suggestions.length" class="suggests">
-        <h4>建议</h4>
-        <p v-for="(s, i) in suggestions" :key="i">· {{ s }}</p>
+      <div v-if="suggestionItems.length" class="suggests">
+        <h4>建议 <span class="suggests-count">{{ suggestionItems.length }} 条</span></h4>
+        <div v-for="(s, i) in suggestionItems" :key="i" class="suggest-row">
+          <el-tag
+            size="small"
+            effect="plain"
+            :type="s.status === '需修改' ? 'danger' : s.status === '待确认' ? 'warning' : 'info'"
+          >
+            {{ s.status ?? '通用' }}
+          </el-tag>
+          <span class="suggest-text">{{ s.text }}</span>
+        </div>
       </div>
 
       <div class="verdict" :class="verdict.cls">
@@ -1180,6 +1227,24 @@ onBeforeUnmount(stopPolling)
   font-style: normal;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.suggests-count {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+.suggest-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+}
+.suggest-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--th-text);
 }
 .suggests h4 {
   margin: 12px 0 6px;
