@@ -170,6 +170,121 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 | GET | `/api/reminders/mine` | STUDENT | 我的催交提醒，默认只返回未读，`unread_only=false` 可看历史 |
 | POST | `/api/reminders/{reminder_id}/read` | STUDENT（本人） | 学生点「我知道了」时标记已读 |
 
+## 智能审阅（外部智能体服务）
+
+中期检查是本系统的重点环节：把「学生 + 环节」的全部材料打包，交给外部智能体服务（运行在局域网 `https://10.96.20.67:9443/api/v1`）异步审阅，结果回写到本系统展示。**主流程（上传、人工审核、退回）不依赖它**，服务不可用时只是少一块建议。
+
+### 分层
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| HTTP 客户端 | `services/agent_client.py` | 提交 / 查状态 / 取结果；解析对方的格式白名单与错误码 |
+| 状态机与落库 | `services/agent_run_service.py` | 提交 → 轮询 → 写回结果；失败分类与中文提示 |
+| 打包 | `services/agent_review_service.py` | 选材料、生成指导记录 docx、限额取舍、预览 |
+| 文档生成 | `services/docx_builder.py` | 指导记录导出为 docx（不引入 python-docx） |
+| 接口 | `api/agent_reviews.py` | 预览 / 发起 / 重试 / 列表 / 详情 |
+| 前端 | `components/AgentReviewCard.vue` + `api/agentReviews.ts` | 预览打包、发起、轮询、结果展示 |
+
+数据表：`agent_reviews`（一次审阅 = 学生 + 环节 + 一包材料）、`agent_review_items`（送审清单，含被跳过的文件与原因）。
+
+### 配置
+
+全部走环境变量，代码里不写死地址：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `AGENT_ENABLED` | `false` | 仅作默认值；运行时以管理员开关为准 |
+| `AGENT_BASE_URL` | — | 对方地址，迁移时只改这里 |
+| `AGENT_TOKEN` | 空 | 对方交付的令牌，只写本机 `.env` |
+| `AGENT_VERIFY_TLS` | `false` | 对方是 Caddy 自签证书且 12 小时一换 |
+| `AGENT_SUPPORTED_EXT` | `docx,png,jpg,jpeg,zip` | 与对方白名单保持一致，不确定时宁可少写 |
+| `AGENT_POLL_INTERVAL` | `10` | 轮询间隔（秒） |
+| `AGENT_MAX_WAIT_MINUTES` | `60` | 单次等待上限 |
+| `AGENT_MAX_FILES` / `AGENT_MAX_FILE_MB` | `10` / `2` | 对方限制 |
+
+管理员在「参数配置」里可以随时关闭智能审阅（与旧的单材料预审共用同一个开关）。关闭后不影响上传与人工审核，只隐藏发起入口。
+
+### 接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/ai/reviews/preview?student_id=&stage=` | 只算不提交：会送哪几份、跳过哪些、缺什么 |
+| POST | `/api/ai/reviews` | 打包并发起；后台任务负责提交与轮询 |
+| POST | `/api/ai/reviews/{id}/retry` | 重新提交（失败后可用） |
+| GET | `/api/ai/reviews?student_id=&stage=&page=&size=` | 列表 |
+| GET | `/api/ai/reviews/{id}` | 详情（含原始 `result`） |
+
+状态：`QUEUED → RUNNING → DONE`；失败为 `FAILED`，无材料可送为 `SKIPPED`。对方的 `review_id` 存 `external_id`，对方入库状态单独存 `external_db_status`。
+
+### 打包规则
+
+1. 目标环节取**最终版本**，旧稿不送；
+2. 中期检查额外带**任务书、开题报告**的最终版，用于跨材料核验；定稿带任务书 + 开题 + 中期；
+3. 中期/定稿会把**指导记录现场导出成 docx**（对方只收 docx/图片/zip），并把沟通证据（截图、代码包）一起送；
+4. 不支持的格式不静默丢弃，记进清单并写明原因，老师能看到「为什么没审任务书」；
+5. 超出 10 份 / 2MB 时按「目标环节优先、最近优先」取舍，并在 warnings 里说明。
+
+`project_id` 固定为 `THS-{student_id}-{STAGE}`，对方按它串历史，同一学生同一环节必须稳定。
+
+### 错误码与提示
+
+| `error_code` | 界面提示 |
+|---|---|
+| `model_unavailable` | 模型服务暂时不可用，请稍后重试；反复出现联系管理员 |
+| `review_failed` | 审阅未完成，服务方未给出具体原因 |
+| `model_tool_validation_failed` | 服务方模型未能完成工具调用（材料过多/过复杂时出现） |
+| `invalid_request` | 提交被拒，请检查材料格式 |
+| `queue_full` | 队列已满，稍后重试 |
+| `timeout` | 等待超时，可稍后在列表查看 |
+| `unauthorized` / `forbidden` | 令牌或反向代理配置问题，联系管理员 |
+| `too_large` | 材料超出体积限制 |
+| `material_missing` | 材料文件缺失，重新上传后再试 |
+
+原始信息保留在括号里（`error` 字段），便于排查。
+
+**格式被拒会自动降级**：对方返回「只接受 DOCX、PDF…」时，解析它的白名单、剔除不支持的文件、自动重提一次，并在清单里标注「服务方不接受 .rar 格式，已自动跳过」。因此配置里多写一个格式不会导致整单失败。
+
+### 证据预览的票据机制
+
+浏览器新标签直接打开文件时带不了 `Authorization` 头，所以：
+
+1. 点「查看」先调 `POST /api/guidance/{id}/ticket`（需登录）；
+2. 拿到一张 **3 分钟有效、绑定单条记录** 的票据；
+3. 浏览器打开 `/api/guidance/{id}/evidence?ticket=...`，由浏览器流式加载（视频可拖进度条）。
+
+**登录令牌本身不进 URL**：直接把 JWT 放查询参数会返回 401。证据响应带 `Cache-Control: no-store`，重新登记后不会看到旧图。
+
+### 已知限制（对接当前阶段）
+
+- 对方的核查项是**动态生成**的：同一份材料多次审阅，条目数量与措辞会变；
+- **规范库为空**：检索恒为 `no_match`，界面显示「规范库尚未接入」占位；
+- **代码 ZIP 会触发失败**：`model_tool_validation_failed`（4B 模型填不出 `record_project_progress` 的参数），已 A/B 定位，待服务方修复；
+- **PDF 可提交但审阅结果未验证**（曾出现 `model_unavailable`）；
+- 串行处理，单份约 3–4 分钟；一次只建议发起 1 个任务；
+- 对方证书 12 小时过期，每天可能短暂中断。
+
+### 联调速查
+
+```bash
+# 1. 健康检查（不需要令牌）
+curl -sk https://10.96.20.67:9443/api/v1/health
+
+# 2. 预览打包（登录后拿 token）
+curl -s "http://127.0.0.1:8000/api/ai/reviews/preview?student_id=85&stage=MIDTERM" \
+  -H "Authorization: Bearer <token>"
+
+# 3. 发起并轮询
+curl -s -X POST http://127.0.0.1:8000/api/ai/reviews \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"student_id":85,"stage":"MIDTERM"}'
+```
+
+辅助脚本在仓库外的 `agent-api-test/`（诊断、四类材料探测、证据打包），不随仓库分发。
+
+### 如果改成内嵌（把对方的循环搬进本系统）
+
+只需替换 `services/agent_client.py`：`submit / get_status / get_result` 三个函数换成进程内调用；`agent_run_service` 的状态机、落库、前端展示、打包规则都不用改。这也是当初把「HTTP 交互」和「状态与落库」分开的原因。
+
 ## 开发进度
 
 - [x] **P1 登录与权限**：三角色账号、JWT、路由守卫、统一响应与全局异常
@@ -193,7 +308,13 @@ Windows 上也可以直接双击 `start-dev.bat`：脚本会检查数据库服�
 - [x] **P6.16 统计报表图表化与导出**：「数据概览」定位为实时看板（今日 / 在途 / 最近登录），「统计报表」定位为历史分析与交材料；报表改为 **10 张图表**（九环节在途柱图、总体完成度仪表盘、各环节通过 / 退回堆叠、审核结论环图、近 N 天动态折线、指导方式环图、教师工作量横条、专业分布环图、班级 Top10、截止逾期）加 10 项指标卡，保留九环节 / 教师两张明细表；后端新增 `export_service` 生成 Excel（10 Sheet、冻结首行、表头配色），前端用 html2canvas + jsPDF 生成 PDF（按 A4 自动分页且优先在面板边界断开，报头只在导出时渲染）
 - [x] **P6.17 材料只看最终版**：学生材料 / 材料中心工具栏新增「只看各环节最终版」勾选，勾上后每人每环节只显示版本号最高的那份（后端按 `(student_id, stage)` 取 `max(version)`，走 SQL 而不是前端过滤，分页和总数都准）；表头份数与说明文案跟着变，取消勾选恢复全部历史版本
 - [x] **P6.18 界面收尾与日志可读性**：教师端学生详情隐藏导师联系方式（老师看自己的学生不需要自己的电话邮箱），学生端补上导师联系卡片；学生导入支持下载 Excel 模板（含表头与一行示例）；阶段审核的筛选条件（环节 / 关键词 / 只看待审核 / 指导教师）同步进地址栏，从详情返回时原样带回；中期指导证据从「只收图片 / PDF」放开为图片、PDF、代码文件或压缩包、视频（视频 ≤100MB、压缩包 ≤30MB、其他 ≤10MB），按扩展名显示「查看截图 / 查看 PDF / 查看视频 / 下载代码包 / 下载代码」；操作日志补齐「指导登记 / 删除指导」动作名，沟通方式、启用状态、环节截止日期一并翻译，参数类日志不再显示 `#midterm_min_guidance` 这类内部键；「新提交」标签加悬停说明（按上传时间判定，下载不消除）
-- [ ] **P7 智能体接入（暂缓）**：`review_service` 接口位与建议展示（选题 / 开题 / 中期 / 查重 / 定稿）
+- [x] **P8.0 契约验证**：摸清对方四个接口、字段结构、错误码与耗时；发现结论不稳定、规范库为空等问题并沉淀为遗留清单
+- [x] **P8.1 按环节打包**：`agent_reviews` / `agent_review_items` 两张表，打包规则（目标环节最终版 + 前置材料 + 缺什么提示），预览接口
+- [x] **P8.2 真实打通**：提交 → 轮询 → 落库的状态机，前端「智能审阅」卡片，发起/重试/列表/详情
+- [x] **P8.3 中期检查为主**：指导记录导出 docx、沟通证据一起送、证据可点击溯源；补统计条、总体进度、与上次对比、规范检索占位
+- [x] **P8.7 降级与开关**：格式被拒自动剔除重提、管理员一键关、错误码中文化
+- [x] **P8.8 文档与联调**：本节说明 + 错误码表 + 票据机制 + 已知限制；九环节可点击查看各环节详情（同步到 main）
+- [ ] **P8.6 中期审查口径**：等对方修复代码 ZIP 触发失败、提供规则库与进度字段
 
 ## 说明
 
