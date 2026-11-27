@@ -103,6 +103,8 @@ const chatShots = computed(
 )
 const chatAnalysis = computed(() => (result.value?.chat_analysis as Record<string, unknown>) ?? null)
 const showAllMsgs = ref(false)
+// 卡片默认只留「材料 + 结论条 + 建议」，AI 的思考过程收起来，避免一屏全是细节
+const showDetails = ref(false)
 
 // 置信度只用一行区间表示，逐条贴百分比对老师没有意义
 const confidenceRange = computed(() => {
@@ -327,7 +329,22 @@ onBeforeUnmount(stopPolling)
         <span class="bar-pending" :style="{ flex: review?.check_pending || 0.001 }" :title="`待确认 ${review?.check_pending}`" />
       </div>
 
-      <ul class="checks">
+      <div v-if="suggestions.length" class="suggests">
+        <h4>建议</h4>
+        <p v-for="(s, i) in suggestions" :key="i">· {{ s }}</p>
+      </div>
+
+      <el-button class="detail-toggle" link type="primary" @click="showDetails = !showDetails">
+        {{
+          showDetails
+            ? '收起分析过程'
+            : `展开分析过程（核查 ${checks.length} 条 · 跨材料 ${crossFindings.length} 项 · 与上次对比 ${findings.length} 条）`
+        }}
+      </el-button>
+
+      <div v-if="showDetails" class="details">
+        <h4 class="details-title">核查明细</h4>
+        <ul class="checks">
         <li v-for="(c, i) in checks" :key="i">
           <div class="check-head" @click="expanded = expanded === i ? null : i">
             <el-tag size="small" :type="statusType(c.status)">{{ c.status }}</el-tag>
@@ -453,9 +470,6 @@ onBeforeUnmount(stopPolling)
         </p>
       </div>
 
-      <div v-if="suggestions.length" class="suggests">
-        <h4>建议</h4>
-        <p v-for="(s, i) in suggestions" :key="i">· {{ s }}</p>
       </div>
 
       <p class="time">
@@ -644,6 +658,20 @@ onBeforeUnmount(stopPolling)
   border-left: 3px solid var(--el-border-color);
   background: var(--el-fill-color-lighter);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.detail-toggle {
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+.details {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+.details-title {
+  margin: 4px 0 6px;
+  font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .bar {
