@@ -81,6 +81,18 @@ const verdict = computed(() => {
 const outcomeLabel = (f: { outcome?: string; source_kind?: string }) =>
   OUTCOME_LABELS[f.outcome ?? ''] ?? (f.source_kind === 'chat_analysis' ? '新发现' : '')
 
+const checksTone = computed(() =>
+  (review.value?.check_failed ?? 0) > 0
+    ? 'is-bad'
+    : (review.value?.check_pending ?? 0) > 0
+      ? 'is-warn'
+      : 'is-ok',
+)
+const compareTone = computed(() => (activeFindings.value.length ? 'is-warn' : 'is-info'))
+const rulesTone = computed(() =>
+  searches.value.some((x) => x.status === 'matched') ? 'is-ok' : 'is-info',
+)
+
 const checkSummary = computed(() => {
   const total = review.value?.check_total ?? checks.value.length
   return `${total} 个核查点 · 通过 ${passedCount.value} / 需修改 ${review.value?.check_failed ?? 0} / 待确认 ${review.value?.check_pending ?? 0}`
@@ -380,7 +392,6 @@ onBeforeUnmount(stopPolling)
     </div>
 
     <div v-if="result" class="result">
-      <p class="summary">{{ result.summary || review?.summary }}</p>
       <div class="counts">
         <span>核查点 {{ review?.check_total }} 个</span>
         <span class="bad">需修改 {{ review?.check_failed }}</span>
@@ -411,13 +422,16 @@ onBeforeUnmount(stopPolling)
       </div>
 
       <div class="mods">
-        <div class="mod-row">
+        <div class="mod-row" :class="checksTone">
           <div class="mod-head" @click="toggleMod('checks')">
             <i class="mod-dot" /><span class="mod-name">核查明细</span>
             <span class="mod-summary">{{ checkSummary }}</span>
             <span class="mod-toggle">{{ openMods.checks ? '收起' : '展开' }}</span>
           </div>
           <div v-if="openMods.checks" class="mod-body">
+            <p v-if="result.summary || review?.summary" class="raw-summary">
+              AI 原始摘要：{{ result.summary || review?.summary }}
+            </p>
             <ul class="checks">
               <li v-for="(c, i) in checks" :key="i">
                 <div class="check-head" @click="expanded = expanded === i ? null : i">
@@ -436,7 +450,10 @@ onBeforeUnmount(stopPolling)
           </div>
         </div>
 
-        <div v-if="Object.keys(materialTypes).length || chatShots.length || chatAnalysis" class="mod-row">
+        <div
+          v-if="Object.keys(materialTypes).length || chatShots.length || chatAnalysis"
+          class="mod-row is-info"
+        >
           <div class="mod-head" @click="toggleMod('analysis')">
             <i class="mod-dot" /><span class="mod-name">分析过程</span>
             <span class="mod-summary">{{ analysisSummary }}</span>
@@ -492,7 +509,7 @@ onBeforeUnmount(stopPolling)
           </div>
         </div>
 
-        <div v-if="progressInfo" class="mod-row">
+        <div v-if="progressInfo" class="mod-row is-info">
           <div class="mod-head" @click="toggleMod('progress')">
             <i class="mod-dot" /><span class="mod-name">总体进度</span>
             <span class="mod-summary">{{ progressSummary }}</span>
@@ -510,7 +527,7 @@ onBeforeUnmount(stopPolling)
           </div>
         </div>
 
-        <div v-if="crossFindings.length" class="mod-row mod-cross">
+        <div v-if="crossFindings.length" class="mod-row mod-cross is-cross">
           <div class="mod-head" @click="toggleMod('cross')">
             <i class="mod-dot" /><span class="mod-name">跨材料核验</span>
             <span class="mod-summary">{{ crossSummary }}</span>
@@ -538,7 +555,7 @@ onBeforeUnmount(stopPolling)
           </div>
         </div>
 
-        <div v-if="findings.length" class="mod-row">
+        <div v-if="findings.length" class="mod-row" :class="compareTone">
           <div class="mod-head" @click="toggleMod('compare')">
             <i class="mod-dot" /><span class="mod-name">与上次对比</span>
             <span class="mod-summary">{{ compareSummary }}</span>
@@ -572,7 +589,7 @@ onBeforeUnmount(stopPolling)
           </div>
         </div>
 
-        <div class="mod-row">
+        <div class="mod-row" :class="rulesTone">
           <div class="mod-head" @click="toggleMod('rules')">
             <i class="mod-dot" /><span class="mod-name">规范检索</span>
             <span class="mod-summary">{{ rulesSummary }}</span>
@@ -849,6 +866,24 @@ onBeforeUnmount(stopPolling)
 .mod-row.mod-cross .mod-head {
   background: rgba(198, 168, 107, 0.08);
 }
+.mod-row.is-bad {
+  box-shadow: inset 3px 0 0 #a33c2a;
+}
+.mod-row.is-bad .mod-dot {
+  background: #a33c2a;
+}
+.mod-row.is-warn {
+  box-shadow: inset 3px 0 0 var(--th-accent);
+}
+.mod-row.is-ok {
+  box-shadow: inset 3px 0 0 #3f7d5a;
+}
+.mod-row.is-ok .mod-dot {
+  background: #3f7d5a;
+}
+.mod-row.is-cross {
+  box-shadow: inset 3px 0 0 var(--th-accent);
+}
 .mod-head {
   display: flex;
   align-items: center;
@@ -868,8 +903,8 @@ onBeforeUnmount(stopPolling)
 }
 .mod-summary {
   flex: 1;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-size: 12.5px;
+  color: var(--el-text-color-regular);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -878,6 +913,15 @@ onBeforeUnmount(stopPolling)
   font-size: 12px;
   color: var(--el-color-primary);
   white-space: nowrap;
+}
+.raw-summary {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--el-fill-color-lighter);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 .mod-body {
   padding: 4px 4px 12px 18px;
