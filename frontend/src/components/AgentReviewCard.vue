@@ -100,6 +100,12 @@ const checksTag = computed(() => {
   if (pending > 0) return { text: `待确认 ${pending} 项`, type: 'warning' as const }
   return { text: '全部通过', type: 'success' as const }
 })
+const chatFindings = computed(() => findings.value.filter((f) => f.source_kind === 'chat_analysis'))
+const progressPercent = computed(() => {
+  const v = (progressInfo.value as { percent?: unknown } | null)?.percent
+  return typeof v === 'number' && v >= 0 && v <= 100 ? Math.round(v) : null
+})
+
 const compareTag = computed(() =>
   activeFindings.value.length
     ? { text: `${activeFindings.value.length} 项需关注`, type: 'warning' as const }
@@ -120,7 +126,11 @@ const analysisSummary = computed(() => {
   const msgs = chatShots.value.reduce((n, s) => n + (s.messages ?? []).length, 0)
   const kinds = Object.keys(materialTypes.value).length
   return (
-    [shots ? `截图 ${shots} 张 · 识别 ${msgs} 条消息` : '', kinds ? `材料分类 ${kinds} 项` : '']
+    [
+      shots ? `截图 ${shots} 张 · 识别 ${msgs} 条消息` : '',
+      kinds ? `材料分类 ${kinds} 项` : '',
+      crossFindings.value.length ? `跨材料 ${crossFindings.value.length} 项` : '',
+    ]
       .filter(Boolean)
       .join(' · ') || '暂无过程信息'
   )
@@ -153,6 +163,7 @@ const staleFindings = computed(
 
 const SOURCE_LABELS: Record<string, string> = {
   chat_analysis: '聊天分析',
+  code_analysis: '代码分析',
   project_progress: '进度分析',
   document: '文档核查',
 }
@@ -534,6 +545,9 @@ onBeforeUnmount(stopPolling)
                 </template>
               </span>
             </p>
+            <p v-if="confidenceRange" class="mod-hint">
+              置信度是 OCR 对文字的识别把握（不是结论对错的概率），{{ confidenceRange }} 表示文字基本可读。
+            </p>
             <div v-for="(s, i) in chatShots" :key="'m' + i" class="msgs">
               <div
                 v-for="(m, j) in (s.messages ?? []).slice(0, showAllMsgs ? 50 : 3)"
@@ -563,6 +577,36 @@ onBeforeUnmount(stopPolling)
               </el-tag>
               <span v-if="chatAnalysis.note" class="meta">{{ chatAnalysis.note }}</span>
             </p>
+
+            <div v-if="chatFindings.length" class="chat-findings">
+              <p v-for="(f, i) in chatFindings" :key="'cf' + i" class="chat-finding">
+                <strong>{{ f.title }}</strong>
+                <span v-if="f.analysis" class="chat-finding-text">{{ f.analysis }}</span>
+              </p>
+            </div>
+
+            <div v-if="crossFindings.length" class="cross-inline">
+              <p class="cross-inline-title">
+                跨材料核验 <span>{{ crossFindings.length }} 项</span>
+              </p>
+              <div v-for="(f, i) in crossFindings" :key="'ci' + i" class="cross-item">
+                <div class="cross-title">
+                  <strong>{{ f.title }}</strong>
+                  <span class="cross-link">
+                    {{ [...new Set((f.evidence ?? []).map((e) => e.name))].join(' ↔ ') }}
+                  </span>
+                </div>
+                <p class="cross-analysis">{{ f.analysis }}</p>
+                <div
+                  v-for="(e, j) in (f.evidence ?? []).slice(0, 4)"
+                  :key="'cie' + j"
+                  class="cross-ev"
+                >
+                  <span class="cross-doc">{{ e.name }}<template v-if="e.message_id"> · {{ e.message_id }}</template></span>
+                  <span class="cross-quote">{{ e.quote }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -573,6 +617,13 @@ onBeforeUnmount(stopPolling)
             <span class="mod-toggle">{{ openMods.progress ? '收起' : '展开' }}</span>
           </div>
           <div v-if="openMods.progress" class="mod-body">
+            <div v-if="progressPercent !== null" class="percent-row">
+              <div class="percent-bar"><i :style="{ width: progressPercent + '%' }" /></div>
+              <span class="percent-text">{{ progressPercent }}%</span>
+            </div>
+            <p v-else class="mod-hint">
+              服务方暂未返回完成度百分比；建议其在 project_progress 中增加 percent 字段，这里会直接显示进度条。
+            </p>
             <p class="kv">
               <span>状态</span>
               <b>{{ progressInfo.status === 'analyzed' ? '已分析' : progressInfo.status }}</b>
@@ -581,34 +632,6 @@ onBeforeUnmount(stopPolling)
               <span>交付物核验</span>
               <b>{{ progressInfo.artifact_verification === 'not_verified' ? '未核验' : progressInfo.artifact_verification }}</b>
             </p>
-          </div>
-        </div>
-
-        <div v-if="crossFindings.length" class="mod-row mod-cross is-cross">
-          <div class="mod-head" @click="toggleMod('cross')">
-            <i class="mod-dot" /><span class="mod-name">跨材料核验</span>
-            <span class="mod-summary">{{ crossSummary }}</span>
-            <span class="mod-toggle">{{ openMods.cross ? '收起' : '展开' }}</span>
-          </div>
-          <div v-if="openMods.cross" class="mod-body">
-            <p class="mod-hint">同一结论同时引用两份及以上材料，说明它做了交叉比对。</p>
-            <div v-for="(f, i) in crossFindings" :key="'c' + i" class="cross-item">
-              <div class="cross-title">
-                <strong>{{ f.title }}</strong>
-                <span class="cross-link">
-                  {{ [...new Set((f.evidence ?? []).map((e) => e.name))].join(' ↔ ') }}
-                </span>
-              </div>
-              <p class="cross-analysis">{{ f.analysis }}</p>
-              <div
-                v-for="(e, j) in (f.evidence ?? []).slice(0, 4)"
-                :key="'ce' + j"
-                class="cross-ev"
-              >
-                <span class="cross-doc">{{ e.name }}<template v-if="e.message_id"> · {{ e.message_id }}</template></span>
-                <span class="cross-quote">{{ e.quote }}</span>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -1007,6 +1030,62 @@ onBeforeUnmount(stopPolling)
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.percent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.percent-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--el-fill-color);
+  overflow: hidden;
+}
+.percent-bar i {
+  display: block;
+  height: 100%;
+  background: var(--th-accent);
+}
+.percent-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--th-accent);
+}
+.chat-findings {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+}
+.chat-finding {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.chat-finding-text {
+  display: block;
+  color: var(--th-text);
+}
+.cross-inline {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--th-accent-soft);
+  background: rgba(198, 168, 107, 0.1);
+}
+.cross-inline-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--th-text);
+}
+.cross-inline-title span {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--th-accent);
 }
 .mod-cross {
   border-color: var(--th-accent-soft);
