@@ -89,6 +89,29 @@ const chatShots = computed(
     }[]) ?? [],
 )
 const chatAnalysis = computed(() => (result.value?.chat_analysis as Record<string, unknown>) ?? null)
+const showAllMsgs = ref(false)
+
+// 置信度只用一行区间表示，逐条贴百分比对老师没有意义
+const confidenceRange = computed(() => {
+  const vals = chatShots.value
+    .flatMap((s) => s.messages ?? [])
+    .map((m) => m.confidence)
+    .filter((v): v is number => typeof v === 'number')
+  if (!vals.length) return ''
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const f = (v: number) => `${Math.round(v * 100)}%`
+  return min === max ? f(min) : `${f(min)}–${f(max)}`
+})
+
+// 跨材料核验：同一结论引用了两份以上材料，才是"跨材料"的证据
+const crossFindings = computed(() =>
+  findings.value.filter(
+    (f) =>
+      f.outcome !== 'no_new_evidence' &&
+      new Set((f.evidence ?? []).map((e) => e.name)).size >= 2,
+  ),
+)
 
 function speakerOf(m: { direction?: string; speaker_label?: string | null }) {
   if (m.speaker_label) return m.speaker_label
@@ -309,23 +332,31 @@ onBeforeUnmount(stopPolling)
           <span class="meta">
             · {{ s.ocr_engine }} · {{ s.width }}×{{ s.height }}
             · 识别消息 {{ (s.messages ?? []).length }} 条
+            <template v-if="confidenceRange"> · 置信度 {{ confidenceRange }}</template>
             <template v-if="(s.unclassified_regions ?? []).length">
               · 未归类文本块 {{ (s.unclassified_regions ?? []).length }}
             </template>
           </span>
         </p>
         <div v-for="(s, i) in chatShots" :key="'m' + i" class="msgs">
-          <div v-for="(m, j) in (s.messages ?? []).slice(0, 12)" :key="j" class="msg">
+          <div
+            v-for="(m, j) in (s.messages ?? []).slice(0, showAllMsgs ? 50 : 3)"
+            :key="j"
+            class="msg"
+          >
             <span class="msg-id">{{ m.message_id ?? `M${j + 1}` }}</span>
             <span class="msg-speaker">{{ speakerOf(m) }}</span>
-            <el-tag v-if="m.confidence !== undefined" size="small" :type="confType(m.confidence)" effect="plain">
-              {{ Math.round((m.confidence ?? 0) * 1000) / 10 }}%
-            </el-tag>
-            <el-tag v-if="(m.categories ?? []).includes('possible_guidance')" size="small" effect="plain" type="warning">
-              可能涉及指导
-            </el-tag>
             <span class="msg-text">{{ m.text }}</span>
           </div>
+          <el-button
+            v-if="(s.messages ?? []).length > 3"
+            link
+            type="primary"
+            size="small"
+            @click="showAllMsgs = !showAllMsgs"
+          >
+            {{ showAllMsgs ? '收起消息' : `展开全部 ${(s.messages ?? []).length} 条` }}
+          </el-button>
         </div>
         <p v-if="chatAnalysis" class="trace">
           聊天分析：
@@ -343,6 +374,28 @@ onBeforeUnmount(stopPolling)
           · 历史事项 {{ progressInfo.finding_count ?? 0 }} 项
           · 交付物核验：{{ progressInfo.artifact_verification === 'not_verified' ? '未核验' : progressInfo.artifact_verification }}
         </p>
+      </div>
+
+      <div v-if="crossFindings.length" class="block cross">
+        <h4>跨材料核验 <span class="cross-count">{{ crossFindings.length }} 项</span></h4>
+        <p class="cross-hint">同一结论能同时引用两份及以上材料，说明它做了交叉比对。</p>
+        <div v-for="(f, i) in crossFindings" :key="'c' + i" class="cross-item">
+          <div class="cross-title">
+            <strong>{{ f.title }}</strong>
+            <span class="cross-link">
+              {{ [...new Set((f.evidence ?? []).map((e) => e.name))].join(' ↔ ') }}
+            </span>
+          </div>
+          <p class="cross-analysis">{{ f.analysis }}</p>
+          <div
+            v-for="(e, j) in (f.evidence ?? []).slice(0, 4)"
+            :key="'ce' + j"
+            class="cross-ev"
+          >
+            <span class="cross-doc">{{ e.name }}<template v-if="e.message_id"> · {{ e.message_id }}</template></span>
+            <span class="cross-quote">{{ e.quote }}</span>
+          </div>
+        </div>
       </div>
 
       <div v-if="findings.length" class="block">
@@ -624,6 +677,56 @@ onBeforeUnmount(stopPolling)
   padding-left: 4px;
   color: var(--el-text-color-regular);
   line-height: 1.6;
+}
+.cross {
+  border: 1px solid var(--th-accent-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: rgba(198, 168, 107, 0.08);
+}
+.cross-count {
+  font-size: 12px;
+  color: var(--th-accent);
+}
+.cross-hint {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.cross-item {
+  padding: 8px 0;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+.cross-item:first-of-type {
+  border-top: none;
+}
+.cross-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.cross-link {
+  font-size: 12px;
+  color: var(--th-accent);
+}
+.cross-analysis {
+  margin: 4px 0 6px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cross-ev {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.cross-doc {
+  flex: 0 0 auto;
+  color: var(--el-color-primary);
+}
+.cross-quote {
+  color: var(--el-text-color-regular);
 }
 .cite {
   font-style: normal;
