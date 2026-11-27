@@ -8,6 +8,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+
 import { aiApi } from '@/api/ai'
 import { STAGES } from '@/constants/stages'
 import {
@@ -63,6 +65,15 @@ const findings = computed(
       evidence?: { quote?: string; name?: string; message_id?: string }[]
     }[]) ?? [],
 )
+// 一行的结论，避免老师从一段长文字里自己找"到底过没过"
+const verdict = computed(() => {
+  const failed = review.value?.check_failed ?? 0
+  const pending = review.value?.check_pending ?? 0
+  if (failed > 0) return { text: `需修改 ${failed} 项，建议先改稿`, cls: 'is-bad' }
+  if (pending > 0) return { text: `有 ${pending} 项待确认，需人工核对`, cls: 'is-warn' }
+  return { text: `未发现需修改项${checks.value.length ? `（核查 ${checks.value.length} 条全部通过）` : ''}`, cls: 'is-ok' }
+})
+
 const SOURCE_LABELS: Record<string, string> = {
   chat_analysis: '聊天分析',
   project_progress: '进度分析',
@@ -334,7 +345,17 @@ onBeforeUnmount(stopPolling)
         <p v-for="(s, i) in suggestions" :key="i">· {{ s }}</p>
       </div>
 
-      <el-button class="detail-toggle" link type="primary" @click="showDetails = !showDetails">
+      <div class="verdict" :class="verdict.cls">
+        <span class="verdict-label">AI 结论</span>
+        <strong>{{ verdict.text }}</strong>
+        <span class="verdict-extra">
+          建议 {{ suggestions.length }} 条
+          <template v-if="!suggestions.length">（本次未给出）</template>
+        </span>
+      </div>
+
+      <el-button class="detail-toggle" @click="showDetails = !showDetails">
+        <el-icon><component :is="showDetails ? ArrowUp : ArrowDown" /></el-icon>
         {{
           showDetails
             ? '收起分析过程'
@@ -661,8 +682,52 @@ onBeforeUnmount(stopPolling)
   color: var(--el-text-color-secondary);
 }
 .detail-toggle {
-  margin: 8px 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 8px 10px;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+.detail-toggle:hover {
+  background: var(--el-color-primary-light-9);
+}
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.verdict-label {
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+.verdict.is-ok {
+  background: rgba(63, 125, 90, 0.1);
+  color: #2f6b48;
+}
+.verdict.is-warn {
+  background: rgba(198, 168, 107, 0.16);
+  color: #8a6d3b;
+}
+.verdict.is-bad {
+  background: rgba(163, 60, 42, 0.1);
+  color: #8c3222;
+}
+.verdict-extra {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.85;
 }
 .details {
   margin-top: 6px;
