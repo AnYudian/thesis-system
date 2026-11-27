@@ -276,6 +276,12 @@ const modelLabel = computed(() => {
 })
 const hasReview = computed(() => !!review.value)
 
+// 本次是否缺少"本环节的正式材料"（只有指导记录/截图这类过程材料）
+const missingOwnMaterial = computed(() => {
+  const items = review.value?.items ?? []
+  return !items.some((i) => i.included && i.stage === props.stage && i.material_id !== null)
+})
+
 // 建议按 rule_id 与问题清单对齐，才能区分「需修改」「待确认」
 const suggestionItems = computed(() => {
   const raw = (result.value?.suggestions ?? []) as (string | { text?: string; rule_id?: string })[]
@@ -458,6 +464,10 @@ onBeforeUnmount(stopPolling)
         · 当前查看的是{{ stageLabel }}，不是学生所在环节，只能查看历史结论，不能发起审阅
       </p>
     </div>
+
+    <p v-if="review && review.status === 'DONE' && missingOwnMaterial" class="warn-strong">
+      ⚠ 本次未包含{{ stageLabel }}报告（只有指导记录、截图等过程材料），结论不完整，不能作为通过依据。
+    </p>
 
     <div v-if="review?.error" class="err">
       <strong>{{ review.error_code || '失败' }}：</strong>{{ review.error }}
@@ -826,6 +836,16 @@ onBeforeUnmount(stopPolling)
   margin: 6px 0 0;
   color: var(--el-color-warning);
   font-size: 12px;
+}
+.warn-strong {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  color: #8a6d3b;
+  font-size: 13px;
+  line-height: 1.6;
 }
 .err {
   margin-top: 12px;
