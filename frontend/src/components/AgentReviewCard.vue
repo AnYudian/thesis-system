@@ -40,7 +40,21 @@ const result = computed(() => review.value?.result ?? null)
 const checks = computed<AgentCheck[]>(() => (result.value?.checks as AgentCheck[]) ?? [])
 const passedCount = computed(() => checks.value.filter((c) => statusType(c.status) === 'success').length)
 const progressInfo = computed(() => (result.value?.project_progress as Record<string, unknown>) ?? null)
-const findings = computed(() => (result.value?.findings as { title?: string; outcome?: string; analysis?: string }[]) ?? [])
+const findings = computed(
+  () =>
+    (result.value?.findings as {
+      title?: string
+      outcome?: string
+      analysis?: string
+      source_kind?: string
+      evidence?: { quote?: string; name?: string; message_id?: string }[]
+    }[]) ?? [],
+)
+const SOURCE_LABELS: Record<string, string> = {
+  chat_analysis: '聊天分析',
+  project_progress: '进度分析',
+  document: '文档核查',
+}
 const searches = computed(
   () => ((result.value?.knowledge as { searches?: { query?: string; status?: string; note?: string }[] })?.searches ?? []),
 )
@@ -62,11 +76,34 @@ const chatShots = computed(
       ocr_engine?: string
       width?: number
       height?: number
-      messages?: { text?: string; sender?: string; time?: string }[]
+      messages?: {
+        text?: string
+        direction?: string
+        confidence?: number
+        categories?: string[]
+        message_id?: string
+        time_text?: string | null
+        speaker_label?: string | null
+      }[]
       unclassified_regions?: unknown[]
     }[]) ?? [],
 )
 const chatAnalysis = computed(() => (result.value?.chat_analysis as Record<string, unknown>) ?? null)
+
+function speakerOf(m: { direction?: string; speaker_label?: string | null }) {
+  if (m.speaker_label) return m.speaker_label
+  // 对方没给发言人，按气泡在截图中的左右位置推断：右侧是老师，左侧是学生
+  if (m.direction === 'right') return '指导老师（右侧）'
+  if (m.direction === 'left') return '学生（左侧）'
+  return '发言人未确认'
+}
+
+function confType(c?: number) {
+  if (c === undefined || c === null) return 'info'
+  if (c >= 0.95) return 'success'
+  if (c >= 0.85) return 'warning'
+  return 'danger'
+}
 const TYPE_LABELS: Record<string, string> = {
   document: '文档',
   chat_screenshot: '聊天截图',
@@ -277,11 +314,18 @@ onBeforeUnmount(stopPolling)
             </template>
           </span>
         </p>
-        <div v-for="(s, i) in chatShots" :key="'m' + i">
-          <blockquote v-for="(m, j) in (s.messages ?? []).slice(0, 8)" :key="j">
-            <template v-if="m.time">[{{ m.time }}] </template>
-            <template v-if="m.sender">{{ m.sender }}：</template>{{ m.text }}
-          </blockquote>
+        <div v-for="(s, i) in chatShots" :key="'m' + i" class="msgs">
+          <div v-for="(m, j) in (s.messages ?? []).slice(0, 12)" :key="j" class="msg">
+            <span class="msg-id">{{ m.message_id ?? `M${j + 1}` }}</span>
+            <span class="msg-speaker">{{ speakerOf(m) }}</span>
+            <el-tag v-if="m.confidence !== undefined" size="small" :type="confType(m.confidence)" effect="plain">
+              {{ Math.round((m.confidence ?? 0) * 1000) / 10 }}%
+            </el-tag>
+            <el-tag v-if="(m.categories ?? []).includes('possible_guidance')" size="small" effect="plain" type="warning">
+              可能涉及指导
+            </el-tag>
+            <span class="msg-text">{{ m.text }}</span>
+          </div>
         </div>
         <p v-if="chatAnalysis" class="trace">
           聊天分析：
@@ -307,8 +351,14 @@ onBeforeUnmount(stopPolling)
           <el-tag size="small" effect="plain" :type="f.outcome === 'improved' ? 'success' : f.outcome === 'still_present' ? 'danger' : 'info'">
             {{ OUTCOME_LABELS[f.outcome ?? ''] ?? f.outcome }}
           </el-tag>
+          <el-tag v-if="f.source_kind" size="small" type="info" effect="plain">
+            {{ SOURCE_LABELS[f.source_kind] ?? f.source_kind }}
+          </el-tag>
           <span>{{ f.title }}</span>
           <em v-if="f.analysis">{{ f.analysis }}</em>
+          <em v-for="(e, j) in (f.evidence ?? []).slice(0, 2)" :key="'e' + j" class="cite">
+            证据：{{ e.quote }}<template v-if="e.name">（{{ e.name }}<template v-if="e.message_id"> {{ e.message_id }}</template>）</template>
+          </em>
         </p>
       </div>
 
@@ -546,6 +596,39 @@ onBeforeUnmount(stopPolling)
   flex-wrap: wrap;
   gap: 6px;
   align-items: baseline;
+}
+.msgs {
+  margin: 6px 0 8px;
+  padding-left: 4px;
+  border-left: 2px solid var(--el-border-color-lighter);
+}
+.msg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.msg-id {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+.msg-speaker {
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+}
+.msg-text {
+  flex-basis: 100%;
+  padding-left: 4px;
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+}
+.cite {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--el-color-primary);
 }
 .trace-item {
   padding: 1px 6px;
