@@ -70,6 +70,9 @@ def _client() -> httpx.AsyncClient:
         headers={"Authorization": f"Bearer {settings.agent_token}"},
         verify=settings.agent_verify_tls,
         timeout=httpx.Timeout(settings.agent_timeout_seconds, connect=10.0),
+        # 对方是局域网地址；开着 VPN 时系统代理会让连接超时，
+        # 内部调用必须绕过代理（curl 不受影响，所以排查时容易误判为服务挂了）
+        trust_env=False,
     )
 
 
