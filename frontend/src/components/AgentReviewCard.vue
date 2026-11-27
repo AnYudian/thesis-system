@@ -542,12 +542,14 @@ onBeforeUnmount(stopPolling)
             <p v-for="(s, i) in chatShots" :key="i" class="trace">
               截图解析：<b>{{ s.name }}</b>
               <span class="meta">
-                · {{ s.ocr_engine }} · {{ s.width }}×{{ s.height }}
                 · 识别消息 {{ (s.messages ?? []).length }} 条
                 <template v-if="confidenceRange"> · 置信度 {{ confidenceRange }}</template>
-                <template v-if="(s.unclassified_regions ?? []).length">
-                  · 未归类文本块 {{ (s.unclassified_regions ?? []).length }}
-                </template>
+              </span>
+              <span
+                class="meta tech"
+                :title="`OCR 引擎：${s.ocr_engine || '未知'}；图片尺寸：${s.width}×${s.height}；未归类文本块：${(s.unclassified_regions ?? []).length}`"
+              >
+                · 技术细节
               </span>
             </p>
             <p v-if="confidenceRange" class="mod-hint">
@@ -1205,6 +1207,10 @@ onBeforeUnmount(stopPolling)
   flex-wrap: wrap;
   gap: 6px;
   align-items: baseline;
+}
+.tech {
+  text-decoration: underline dotted;
+  cursor: help;
 }
 .msgs {
   margin: 6px 0 8px;
