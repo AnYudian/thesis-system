@@ -173,13 +173,20 @@ const lastReviewedText = computed(() =>
 // 本环节材料置顶，其余按上传时间倒序，找历史版本时也不用来回翻
 const sortedMaterials = computed(() => {
   const stage = activeStage.value
-  // 点了哪个环节就只看哪个环节的材料，不再混着显示
-  return materials.value
-    .filter((m) => m.stage === stage)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  // 全部材料都要能翻到（历史可溯源），但正在查看的环节置顶
+  return [...materials.value].sort((a, b) => {
+    const aSelected = a.stage === stage ? 0 : 1
+    const bSelected = b.stage === stage ? 0 : 1
+    if (aSelected !== bSelected) return aSelected - bSelected
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
 })
 
-const materialRowClass = ({ row }: { row: Material }) => (isNewMaterial(row) ? 'row-new' : '')
+const materialRowClass = ({ row }: { row: Material }) => {
+  if (isNewMaterial(row)) return 'row-new'
+  // 正在查看的环节给一层淡底，便于在全部材料里定位
+  return row.stage === activeStage.value ? 'row-active-stage' : ''
+}
 
 // 管理员看的是"过程有没有真的发生"：面谈几次、线上几次、留了几张证据，
 // 这些比一句"已完成指导"更能说明问题，所以放在明细表上方先给个汇总。
@@ -487,9 +494,9 @@ onMounted(loadAll)
         <header class="panel-head">
           <h3>阶段材料</h3>
           <p>
-            共 {{ sortedMaterials.length }} 份（含历次版本）
+            共 {{ materials.length }} 份（含历次版本），保留全部历史可溯源
             <template v-if="currentStageLatest.length">
-              · {{ stageShort(activeStage) }}环节 {{ currentStageLatest.length }} 份，
+              · 当前查看：{{ stageShort(activeStage) }} {{ currentStageLatest.length }} 份，
               <b v-if="newMaterials.length" class="new-count">
                 其中 {{ newMaterials.length }} 份学生新提交待核对
               </b>
@@ -511,6 +518,15 @@ onMounted(loadAll)
               <span>{{ stageShort(row.stage) }}</span>
               <el-tag v-if="row.stage === detail.current_stage" class="tag-current" size="small" effect="plain">
                 本环节
+              </el-tag>
+              <el-tag
+                v-else-if="row.stage === activeStage"
+                class="tag-current"
+                size="small"
+                effect="plain"
+                type="info"
+              >
+                查看中
               </el-tag>
             </template>
           </el-table-column>
