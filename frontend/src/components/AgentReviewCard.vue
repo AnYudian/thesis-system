@@ -101,6 +101,11 @@ const checksTag = computed(() => {
   return { text: '全部通过', type: 'success' as const }
 })
 const chatFindings = computed(() => findings.value.filter((f) => f.source_kind === 'chat_analysis'))
+// 跨材料核验本身就是从聊天结论里挑出来的，列表里去掉重复项
+const chatOnlyFindings = computed(() => {
+  const crossTitles = new Set(crossFindings.value.map((f) => f.title))
+  return chatFindings.value.filter((f) => !crossTitles.has(f.title))
+})
 const progressPercent = computed(() => {
   const v = (progressInfo.value as { percent?: unknown } | null)?.percent
   return typeof v === 'number' && v >= 0 && v <= 100 ? Math.round(v) : null
@@ -578,8 +583,9 @@ onBeforeUnmount(stopPolling)
               <span v-if="chatAnalysis.note" class="meta">{{ chatAnalysis.note }}</span>
             </p>
 
-            <div v-if="chatFindings.length" class="chat-findings">
-              <p v-for="(f, i) in chatFindings" :key="'cf' + i" class="chat-finding">
+            <div v-if="chatOnlyFindings.length" class="chat-findings">
+              <p class="chat-findings-title">聊天分析结论</p>
+              <p v-for="(f, i) in chatOnlyFindings" :key="'cf' + i" class="chat-finding">
                 <strong>{{ f.title }}</strong>
                 <span v-if="f.analysis" class="chat-finding-text">{{ f.analysis }}</span>
               </p>
@@ -1053,6 +1059,11 @@ onBeforeUnmount(stopPolling)
   font-size: 13px;
   font-weight: 600;
   color: var(--th-accent);
+}
+.chat-findings-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .chat-findings {
   margin: 6px 0 8px;
