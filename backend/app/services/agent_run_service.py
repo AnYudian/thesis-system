@@ -18,6 +18,8 @@ from app.models.agent_review import AgentReview
 from app.models.enums import AiRunStatus
 from app.models.material import Material
 from app.services import agent_client
+from pathlib import Path
+
 from app.services.agent_client import AgentError, UploadFile
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,21 @@ logger = logging.getLogger(__name__)
 # 对方的核查状态是中文，直接映射成计数，避免前端自己去字符串匹配
 FAILED_LABELS = {"需修改", "不通过"}
 PENDING_LABELS = {"待确认", "待核验"}
+
+# 错误码 → 用户能看懂、能行动的提示。原始信息留在日志里，界面不抛技术黑话
+FRIENDLY_ERRORS = {
+    "model_unavailable": "智能审阅的模型服务暂时不可用，请稍后重试；反复出现请联系管理员",
+    "review_failed": "审阅未完成，服务方未给出具体原因，请稍后重试",
+    "invalid_request": "提交被服务方拒绝，请检查材料格式后重试",
+    "queue_full": "审阅队列已满，请稍后重试",
+    "timeout": "等待审阅超时，可稍后在列表中查看结果",
+    "unauthorized": "智能审阅服务鉴权失败，请联系管理员检查令牌",
+    "forbidden": "智能审阅服务拒绝访问，请联系管理员检查反向代理配置",
+    "too_large": "材料超出体积限制，请减少文件后重试",
+    "material_missing": "材料文件缺失，请重新上传后再发起审阅",
+    "bad_response": "智能审阅服务返回了无法识别的内容，请稍后重试",
+    "upstream_error": "智能审阅服务暂时不可用，请稍后重试",
+}
 
 
 def _now() -> datetime:
@@ -86,7 +103,32 @@ async def run(db: AsyncSession, review_id: int) -> AgentReview:
     await db.commit()
 
     try:
-        submitted = await agent_client.submit(files, review.project_id)
+        try:
+            submitted = await agent_client.submit(files, review.project_id)
+        except AgentError as exc:
+            # 服务方拒绝某个格式时是整单 400；把不支持的文件剔掉重试一次，
+            # 而不是让老师看到"整单失败"却不知道为什么
+            allowed = exc.allowed_exts
+            if not allowed:
+                raise
+            dropped = 0
+            kept: list[UploadFile] = []
+            for item, f in zip(included, files):
+                ext = Path(f.name).suffix.lower().lstrip(".")
+                if ext in allowed:
+                    kept.append(f)
+                    continue
+                item.included = False
+                item.skip_reason = f"服务方不接受 .{ext or '未知'} 格式，已自动跳过"
+                dropped += 1
+            if dropped == 0:
+                raise
+            logger.warning("服务方拒绝格式 %s，已跳过 %d 份后重试 review_id=%s", sorted(allowed), dropped, review_id)
+            await db.commit()
+            if not kept:
+                raise AgentError("所有材料格式都不被服务方接受", "invalid_request")
+            files = kept
+            submitted = await agent_client.submit(files, review.project_id)
         review.external_id = submitted.get("review_id")
         review.external_db_status = submitted.get("database_status")
         await db.commit()
@@ -122,7 +164,8 @@ async def run(db: AsyncSession, review_id: int) -> AgentReview:
     except AgentError as exc:
         logger.warning("智能审阅失败 review_id=%s code=%s: %s", review_id, exc.code, exc.message)
         review.status = AiRunStatus.FAILED.value
-        review.error = exc.message
+        friendly = FRIENDLY_ERRORS.get(exc.code)
+        review.error = f"{friendly}（原始：{exc.message}）" if friendly else exc.message
         review.error_code = exc.code
         review.finished_at = _now()
         await db.commit()

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,11 +25,34 @@ from app.core.config import get_settings
 class AgentError(Exception):
     """调用外部服务失败。code 尽量保留对方的原始错误码，便于前端区分是否可重试。"""
 
-    def __init__(self, message: str, code: str = "agent_error", retryable: bool = False):
+    def __init__(
+        self,
+        message: str,
+        code: str = "agent_error",
+        retryable: bool = False,
+        allowed_exts: set[str] | None = None,
+    ):
         self.message = message
         self.code = code
         self.retryable = retryable
+        # 服务方拒绝格式时，把它的白名单解析出来，调用方据此剔除文件后重试
+        self.allowed_exts = allowed_exts
         super().__init__(message)
+
+
+_ALLOWED_RE = re.compile(r"只接受(.{2,80}?)文件")
+
+
+def _parse_allowed(message: str) -> set[str] | None:
+    """从「只接受 DOCX、PDF、PNG… 文件」里取出可用扩展名。"""
+    m = _ALLOWED_RE.search(message or "")
+    if not m:
+        return None
+    # 文案里混着中文（"或代码 ZIP"），直接抓 2-4 位英文词，再过滤成已知扩展名
+    token_map = {"DOCX": "docx", "DOC": "doc", "PDF": "pdf", "PNG": "png",
+                 "JPG": "jpg", "JPEG": "jpeg", "ZIP": "zip", "RAR": "rar", "TXT": "txt"}
+    found = {token_map[t.upper()] for t in re.findall(r"[A-Za-z]{2,4}", m.group(1)) if t.upper() in token_map}
+    return found or None
 
 
 @dataclass
@@ -67,7 +91,11 @@ def _check(resp: httpx.Response) -> dict:
             detail = (resp.json().get("error") or {}).get("message") or ""
         except Exception:
             detail = resp.text[:200]
-        raise AgentError(f"智能审阅服务返回 {resp.status_code}：{detail}", "invalid_request")
+        raise AgentError(
+            f"智能审阅服务返回 {resp.status_code}：{detail}",
+            "invalid_request",
+            allowed_exts=_parse_allowed(detail),
+        )
     try:
         return resp.json()
     except Exception as exc:  # noqa: BLE001

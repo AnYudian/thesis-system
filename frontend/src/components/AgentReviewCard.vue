@@ -8,6 +8,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+import { aiApi } from '@/api/ai'
 import {
   AGENT_STATUS_LABEL,
   createAgentReview,
@@ -24,13 +25,17 @@ const props = defineProps<{ studentId: number; stage: string }>()
 const preview = ref<PackagePreview | null>(null)
 const review = ref<AgentReview | null>(null)
 const loading = ref(false)
+// 管理员在「参数配置」里关掉智能审阅时，按钮要禁用而不是让人白点
+const aiEnabled = ref(true)
 const submitting = ref(false)
 const expanded = ref<number | null>(null)
 let timer: number | undefined
 
 const statusLabel = computed(() => (review.value ? AGENT_STATUS_LABEL[review.value.status] : ''))
 const running = computed(() => review.value?.status === 'QUEUED' || review.value?.status === 'RUNNING')
-const canSubmit = computed(() => (preview.value?.total_files ?? 0) > 0 && !running.value && !submitting.value)
+const canSubmit = computed(
+  () => aiEnabled.value && (preview.value?.total_files ?? 0) > 0 && !running.value && !submitting.value,
+)
 const result = computed(() => review.value?.result ?? null)
 const checks = computed<AgentCheck[]>(() => (result.value?.checks as AgentCheck[]) ?? [])
 const passedCount = computed(() => checks.value.filter((c) => statusType(c.status) === 'success').length)
@@ -118,8 +123,17 @@ async function submit() {
   }
 }
 
+async function loadSwitch() {
+  try {
+    aiEnabled.value = (await aiApi.status()).enabled
+  } catch {
+    aiEnabled.value = true
+  }
+}
+
 onMounted(async () => {
   loading.value = true
+  await loadSwitch()
   await Promise.all([loadPreview(), loadLatest()])
   loading.value = false
   if (running.value) startPolling()
@@ -166,7 +180,7 @@ onBeforeUnmount(stopPolling)
       <div class="pkg-head">
         <span>本次将送 <strong>{{ preview?.total_files ?? 0 }}</strong> 份材料</span>
         <el-button type="primary" size="small" :loading="submitting" :disabled="!canSubmit" @click="submit">
-          {{ running ? '审阅中…' : '发起智能审阅' }}
+          {{ running ? '审阅中…' : aiEnabled ? '发起智能审阅' : '管理员已关闭' }}
         </el-button>
       </div>
       <ul v-if="preview?.files.length" class="pkg-list">
@@ -238,8 +252,11 @@ onBeforeUnmount(stopPolling)
         </p>
       </div>
 
-      <div v-if="searches.length" class="block">
+      <div class="block">
         <h4>规范检索</h4>
+        <p v-if="!searches.length" class="empty-hint">
+          规范库尚未接入，本项暂无依据；接入后这里会显示命中的条款与原文。
+        </p>
         <p v-for="(s, i) in searches" :key="i" class="search">
           <el-tag size="small" :type="s.status === 'matched' ? 'success' : 'info'" effect="plain">
             {{ s.status === 'matched' ? '命中' : '未命中' }}

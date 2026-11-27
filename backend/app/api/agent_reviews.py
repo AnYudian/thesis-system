@@ -29,6 +29,7 @@ from app.schemas.agent_review import (
     PackagePreview,
 )
 from app.services import agent_review_service as svc
+from app.services import config_service
 from app.services import agent_run_service
 from app.services import student_service as student_svc
 
@@ -139,6 +140,9 @@ async def create(
     if actor.role == Role.STUDENT.value:
         # 对方串行处理，每人 3-4 分钟；学生反复点会直接把队列堵死
         raise AppError(40323, "学生不能发起智能审阅", http_status=403)
+    if not await config_service.get_ai_enabled(db):
+        # 沿用管理员在「参数配置」里的开关：接口故障或演示时一键关掉，不影响人工审核
+        raise AppError(40030, "管理员已关闭智能审阅，暂时不能发起", http_status=403)
     await _ensure_view(db, actor, payload.student_id)
     pkg = await svc.build_package(db, payload.student_id, payload.stage.value)
     if not pkg.included:
