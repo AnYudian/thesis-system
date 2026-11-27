@@ -43,6 +43,12 @@ let timer: number | undefined
 
 const statusLabel = computed(() => (review.value ? AGENT_STATUS_LABEL[review.value.status] : ''))
 const running = computed(() => review.value?.status === 'QUEUED' || review.value?.status === 'RUNNING')
+// 超过 20 分钟还没结果，多半是服务重启或对方卡住，提示用户重跑
+const stuckRunning = computed(() => {
+  if (!running.value || !review.value?.submitted_at) return false
+  const mins = (Date.now() - new Date(review.value.submitted_at).getTime()) / 60000
+  return mins > 20
+})
 const canSubmit = computed(
   () =>
     aiEnabled.value &&
@@ -445,6 +451,9 @@ onBeforeUnmount(stopPolling)
       </ul>
       <p v-else class="empty">本环节还没有可送审的材料。</p>
       <p v-for="w in preview?.warnings ?? []" :key="w" class="warn">· {{ w }}</p>
+      <p v-if="stuckRunning" class="warn">
+        · 已超过 20 分钟仍未完成，可能已中断（服务重启或对方超时），可点「重新审阅」
+      </p>
       <p v-if="props.canInitiate === false" class="warn">
         · 当前查看的是{{ stageLabel }}，不是学生所在环节，只能查看历史结论，不能发起审阅
       </p>
@@ -544,12 +553,6 @@ onBeforeUnmount(stopPolling)
               <span class="meta">
                 · 识别消息 {{ (s.messages ?? []).length }} 条
                 <template v-if="confidenceRange"> · 置信度 {{ confidenceRange }}</template>
-              </span>
-              <span
-                class="meta tech"
-                :title="`OCR 引擎：${s.ocr_engine || '未知'}；图片尺寸：${s.width}×${s.height}；未归类文本块：${(s.unclassified_regions ?? []).length}`"
-              >
-                · 技术细节
               </span>
             </p>
             <p v-if="confidenceRange" class="mod-hint">
@@ -1207,10 +1210,6 @@ onBeforeUnmount(stopPolling)
   flex-wrap: wrap;
   gap: 6px;
   align-items: baseline;
-}
-.tech {
-  text-decoration: underline dotted;
-  cursor: help;
 }
 .msgs {
   margin: 6px 0 8px;

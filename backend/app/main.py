@@ -4,6 +4,7 @@
 在这里 include_router 挂上去即可，main.py 本身保持很薄。
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,7 @@ from app.api.users import router as users_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.response import ApiResponse
-from app.services import ai_service
+from app.services import agent_run_service, ai_service
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +64,10 @@ async def lifespan(_: FastAPI):
     except Exception:
         # 数据库没起来时仍要能打开 /docs，启动自检失败只记警告
         logger.warning("启动自检失败：无法清理中断的预审任务", exc_info=True)
+
+    # 智能审阅的轮询跑在本进程里，重启会掐断；启动时后台接管，
+    # 否则记录会永远停在「审阅中」
+    asyncio.create_task(agent_run_service.reconcile_running())
     yield
 
 

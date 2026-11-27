@@ -179,6 +179,76 @@ async def run(db: AsyncSession, review_id: int) -> AgentReview:
     return review
 
 
+async def resume_review(db: AsyncSession, review_id: int) -> None:
+    """接管一条"进行中"的记录：进程重启会掐断轮询，否则它会永远停在审阅中。"""
+    review = await db.get(AgentReview, review_id)
+    if review is None or review.status != AiRunStatus.RUNNING.value:
+        return
+    if not review.external_id:
+        review.status = AiRunStatus.FAILED.value
+        review.error = "提交未完成（服务重启导致中断），请重新审阅"
+        review.error_code = "interrupted"
+        review.finished_at = _now()
+        await db.commit()
+        return
+
+    try:
+        state = await agent_client.poll_until_done(review.external_id)
+        review.started_at = _parse_time(state.get("started_at")) or review.started_at
+        review.finished_at = _parse_time(state.get("finished_at"))
+        review.external_db_status = state.get("database_status")
+        if state.get("status") == "failed":
+            err = state.get("error") or {}
+            raise AgentError(
+                err.get("message") or "对方判定任务失败",
+                err.get("code") or "task_failed",
+                retryable=(err.get("code") in {"model_unavailable", "upstream_error"}),
+            )
+        payload = await agent_client.get_result(review.external_id)
+        result = payload.get("result") or {}
+        review.result = result
+        review.summary = result.get("summary")
+        review.review_mode = result.get("review_mode")
+        review.model = result.get("model")
+        review.simulation_only = result.get("simulation_only")
+        review.check_total, review.check_failed, review.check_pending = _count_checks(result)
+        review.status = AiRunStatus.DONE.value
+        review.finished_at = review.finished_at or _now()
+        review.external_db_status = payload.get("database_status") or review.external_db_status
+        await db.commit()
+    except AgentError as exc:
+        review.status = AiRunStatus.FAILED.value
+        friendly = FRIENDLY_ERRORS.get(exc.code)
+        review.error = f"{friendly}（原始：{exc.message}）" if friendly else exc.message
+        review.error_code = exc.code
+        review.finished_at = _now()
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("接管审阅任务失败 review_id=%s", review_id)
+        review.status = AiRunStatus.FAILED.value
+        review.error = f"未预期错误：{type(exc).__name__}: {exc}"
+        review.error_code = "internal_error"
+        review.finished_at = _now()
+        await db.commit()
+
+
+async def reconcile_running() -> None:
+    """启动时接管所有 RUNNING 记录（逐个处理，避免同时压对方队列）。"""
+    async with SessionLocal() as db:
+        ids = (
+            await db.execute(select(AgentReview.id).where(AgentReview.status == AiRunStatus.RUNNING.value))
+        ).scalars().all()
+    if not ids:
+        return
+    logger.info("检测到 %s 条上次中断的智能审阅，开始接管", len(ids))
+    for rid in ids:
+        async with SessionLocal() as db:
+            try:
+                await resume_review(db, rid)
+            except Exception:  # noqa: BLE001
+                logger.exception("接管失败 review_id=%s", rid)
+
+
 async def run_in_new_session(review_id: int) -> None:
     """后台任务入口：请求的 session 在响应返回后就关了，必须自己开一个。"""
     async with SessionLocal() as db:
