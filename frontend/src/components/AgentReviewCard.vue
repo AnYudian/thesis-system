@@ -93,6 +93,24 @@ const rulesTone = computed(() =>
   searches.value.some((x) => x.status === 'matched') ? 'is-ok' : 'is-info',
 )
 
+const checksTag = computed(() => {
+  const failed = review.value?.check_failed ?? 0
+  const pending = review.value?.check_pending ?? 0
+  if (failed > 0) return { text: `需修改 ${failed} 项`, type: 'danger' as const }
+  if (pending > 0) return { text: `待确认 ${pending} 项`, type: 'warning' as const }
+  return { text: '全部通过', type: 'success' as const }
+})
+const compareTag = computed(() =>
+  activeFindings.value.length
+    ? { text: `${activeFindings.value.length} 项需关注`, type: 'warning' as const }
+    : { text: '无变化', type: 'info' as const },
+)
+const rulesTag = computed(() =>
+  searches.value.some((x) => x.status === 'matched')
+    ? { text: '有依据', type: 'success' as const }
+    : { text: '无依据', type: 'info' as const },
+)
+
 const checkSummary = computed(() => {
   const total = review.value?.check_total ?? checks.value.length
   return `${total} 个核查点 · 通过 ${passedCount.value} / 需修改 ${review.value?.check_failed ?? 0} / 待确认 ${review.value?.check_pending ?? 0}`
@@ -119,9 +137,7 @@ const crossSummary = computed(() =>
     ? `${crossFindings.value.length} 项${crossFindings.value[0]?.title ? `（${crossFindings.value[0].title}${crossFindings.value.length > 1 ? ' 等' : ''}）` : ''}`
     : '',
 )
-const compareSummary = computed(
-  () => `${activeFindings.value.length} 项需关注 · ${staleFindings.value.length} 项无新证据`,
-)
+const compareSummary = computed(() => `${staleFindings.value.length} 项无新证据`)
 const rulesSummary = computed(() =>
   searches.value.length
     ? `${searches.value.length} 次检索 · 命中 ${searches.value.filter((x) => x.status === 'matched').length} 次`
@@ -230,19 +246,11 @@ const CHAT_STATUS_LABELS: Record<string, string> = {
   insufficient_evidence: '证据不足',
   skipped: '未分析',
 }
-const MODEL_LABELS: [RegExp, string][] = [
-  [/qwen3[-_ ]?4b/i, '通义千问3 · 4B'],
-  [/qwen3[-_ ]?32b/i, '通义千问3 · 32B'],
-  [/qwen/i, '通义千问'],
-  [/deepseek/i, 'DeepSeek'],
-]
+// 直接用模型原名：去掉厂商前缀和日期后缀（qwen/qwen3-4b-2507 → qwen3-4b）
 const modelLabel = computed(() => {
   const raw = review.value?.model ?? ''
   if (!raw) return ''
-  for (const [re, label] of MODEL_LABELS) {
-    if (re.test(raw)) return label
-  }
-  return raw
+  return raw.split('/').pop()?.replace(/-\d{4}$/, '') ?? raw
 })
 const hasReview = computed(() => !!review.value)
 
@@ -253,8 +261,9 @@ const suggestionItems = computed(() => {
   const statusOf = (rule?: string) =>
     rule ? problems.find((p) => p.rule_id === rule)?.status : undefined
   return raw.map((item) => {
-    if (typeof item === 'string') return { text: item, status: undefined }
-    return { text: String(item.text ?? ''), status: statusOf(item.rule_id) }
+    if (typeof item === 'string') return { text: item, status: '待确认' }
+    // 对方没给对应问题时，按「待确认」处理：需要老师自己判断要不要采纳
+    return { text: String(item.text ?? ''), status: statusOf(item.rule_id) ?? '待确认' }
   })
 })
 const suggestions = computed<string[]>(() => {
@@ -453,7 +462,7 @@ onBeforeUnmount(stopPolling)
             effect="plain"
             :type="s.status === '需修改' ? 'danger' : s.status === '待确认' ? 'warning' : 'info'"
           >
-            {{ s.status ?? '通用' }}
+            {{ s.status ?? '待确认' }}
           </el-tag>
           <span class="suggest-text">{{ s.text }}</span>
         </div>
@@ -472,6 +481,7 @@ onBeforeUnmount(stopPolling)
         <div class="mod-row" :class="checksTone">
           <div class="mod-head" @click="toggleMod('checks')">
             <i class="mod-dot" /><span class="mod-name">核查明细</span>
+            <el-tag size="small" :type="checksTag.type" effect="plain">{{ checksTag.text }}</el-tag>
             <span class="mod-summary">{{ checkSummary }}</span>
             <span class="mod-toggle">{{ openMods.checks ? '收起' : '展开' }}</span>
           </div>
@@ -605,6 +615,7 @@ onBeforeUnmount(stopPolling)
         <div v-if="findings.length" class="mod-row" :class="compareTone">
           <div class="mod-head" @click="toggleMod('compare')">
             <i class="mod-dot" /><span class="mod-name">与上次对比</span>
+            <el-tag size="small" :type="compareTag.type" effect="plain">{{ compareTag.text }}</el-tag>
             <span class="mod-summary">{{ compareSummary }}</span>
             <span class="mod-toggle">{{ openMods.compare ? '收起' : '展开' }}</span>
           </div>
@@ -639,6 +650,7 @@ onBeforeUnmount(stopPolling)
         <div class="mod-row" :class="rulesTone">
           <div class="mod-head" @click="toggleMod('rules')">
             <i class="mod-dot" /><span class="mod-name">规范检索</span>
+            <el-tag size="small" :type="rulesTag.type" effect="plain">{{ rulesTag.text }}</el-tag>
             <span class="mod-summary">{{ rulesSummary }}</span>
             <span class="mod-toggle">{{ openMods.rules ? '收起' : '展开' }}</span>
           </div>
@@ -913,23 +925,11 @@ onBeforeUnmount(stopPolling)
 .mod-row.mod-cross .mod-head {
   background: rgba(198, 168, 107, 0.08);
 }
-.mod-row.is-bad {
-  box-shadow: inset 3px 0 0 #a33c2a;
-}
 .mod-row.is-bad .mod-dot {
   background: #a33c2a;
 }
-.mod-row.is-warn {
-  box-shadow: inset 3px 0 0 var(--th-accent);
-}
-.mod-row.is-ok {
-  box-shadow: inset 3px 0 0 #3f7d5a;
-}
 .mod-row.is-ok .mod-dot {
   background: #3f7d5a;
-}
-.mod-row.is-cross {
-  box-shadow: inset 3px 0 0 var(--th-accent);
 }
 .mod-head {
   display: flex;
