@@ -171,20 +171,13 @@ const lastReviewedText = computed(() =>
 )
 
 // 本环节材料置顶，其余按上传时间倒序，找历史版本时也不用来回翻
-const sortedMaterials = computed(() => {
-  const stage = activeStage.value
-  // 全部材料都要能翻到（历史可溯源），但正在查看的环节置顶
-  return [...materials.value].sort((a, b) => {
-    const aSelected = a.stage === stage ? 0 : 1
-    const bSelected = b.stage === stage ? 0 : 1
-    if (aSelected !== bSelected) return aSelected - bSelected
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  })
-})
+const sortedMaterials = computed(() =>
+  // 一律按上传时间倒序，不因为"正在查看哪个环节"而重排，保持时间线可读
+  [...materials.value].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+)
 
 const materialRowClass = ({ row }: { row: Material }) => {
   if (isNewMaterial(row)) return 'row-new'
-  // 正在查看的环节给一层淡底，便于在全部材料里定位
   return row.stage === activeStage.value ? 'row-active-stage' : ''
 }
 
@@ -516,17 +509,17 @@ onMounted(loadAll)
           <el-table-column label="环节" width="164">
             <template #default="{ row }">
               <span>{{ stageShort(row.stage) }}</span>
-              <el-tag v-if="row.stage === detail.current_stage" class="tag-current" size="small" effect="plain">
-                本环节
+              <el-tag v-if="row.stage === activeStage" class="tag-current" size="small" effect="plain">
+                查看中
               </el-tag>
               <el-tag
-                v-else-if="row.stage === activeStage"
+                v-else-if="row.stage === detail.current_stage"
                 class="tag-current"
                 size="small"
                 effect="plain"
                 type="info"
               >
-                查看中
+                学生当前
               </el-tag>
             </template>
           </el-table-column>
