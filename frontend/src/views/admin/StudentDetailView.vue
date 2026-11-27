@@ -489,7 +489,7 @@ onMounted(loadAll)
           <p>
             共 {{ materials.length }} 份（含历次版本），保留全部历史可溯源
             <template v-if="currentStageLatest.length">
-              · 当前查看：{{ stageShort(activeStage) }} {{ currentStageLatest.length }} 份，
+              · 本环节（{{ stageShort(activeStage) }}）{{ currentStageLatest.length }} 份，
               <b v-if="newMaterials.length" class="new-count">
                 其中 {{ newMaterials.length }} 份学生新提交待核对
               </b>
@@ -510,16 +510,7 @@ onMounted(loadAll)
             <template #default="{ row }">
               <span>{{ stageShort(row.stage) }}</span>
               <el-tag v-if="row.stage === activeStage" class="tag-current" size="small" effect="plain">
-                查看中
-              </el-tag>
-              <el-tag
-                v-else-if="row.stage === detail.current_stage"
-                class="tag-current"
-                size="small"
-                effect="plain"
-                type="info"
-              >
-                学生当前
+                本环节
               </el-tag>
             </template>
           </el-table-column>
