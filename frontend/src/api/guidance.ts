@@ -78,13 +78,20 @@ export const guidanceApi = {
   /** 证据接口要带 token，只能先取 blob 再转成浏览器能显示的临时地址 */
   async evidenceUrl(record: GuidanceRecord): Promise<string> {
     // timeout: 0 —— 视频/压缩包可能几十 MB，不能用全局 15 秒超时
-    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob', timeout: 0 })
+    // 证据可能被重新登记，加时间戳避免拿到浏览器缓存的旧图
+    const res = await http.get(`/guidance/${record.id}/evidence?v=${Date.now()}`, {
+      responseType: 'blob',
+      timeout: 0,
+    })
     return URL.createObjectURL(res.data as Blob)
   },
 
   /** 压缩包 / 代码文件浏览器没法预览，直接按原文件名下载 */
   async downloadEvidence(record: GuidanceRecord) {
-    const res = await http.get(`/guidance/${record.id}/evidence`, { responseType: 'blob', timeout: 0 })
+    const res = await http.get(`/guidance/${record.id}/evidence?v=${Date.now()}`, {
+      responseType: 'blob',
+      timeout: 0,
+    })
     const url = URL.createObjectURL(res.data as Blob)
     const a = document.createElement('a')
     a.href = url
@@ -109,7 +116,7 @@ export const guidanceApi = {
     const win = window.open('about:blank', '_blank')
     try {
       const { ticket } = await post<{ ticket: string; expires_in: number }>(`/guidance/${record.id}/ticket`)
-      const url = `/api/guidance/${record.id}/evidence?ticket=${encodeURIComponent(ticket)}`
+      const url = `/api/guidance/${record.id}/evidence?ticket=${encodeURIComponent(ticket)}&v=${Date.now()}`
       if (win) win.location.href = url
       else window.open(url, '_blank')
     } catch (err) {

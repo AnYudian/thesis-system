@@ -184,6 +184,8 @@ async def download_evidence(
         media_type=record.evidence_type or "application/octet-stream",
         # inline 才会在浏览器里直接播放/预览；attachment 会变成下载
         content_disposition_type="inline",
+        # 证据文件会被替换（例如重新登记），禁止浏览器复用旧副本
+        headers={"Cache-Control": "no-store"},
     )
 
 
