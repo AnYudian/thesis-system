@@ -112,10 +112,19 @@ const midtermPhase = computed<'BEFORE' | 'AT' | 'AFTER'>(() => {
   return currentIndex.value < midtermIndex ? 'BEFORE' : 'AFTER'
 })
 
+// 九环节可以点：默认看学生当前环节，点别的环节就切到那个环节的材料/指导/审核历史。
+// 查看历史环节时不允许做通过/退回，避免老师误操作。
+const selectedStage = ref<string | null>(null)
+const activeStage = computed(() => selectedStage.value ?? detail.value?.current_stage ?? '')
+const activeIndex = computed(() => STAGES.findIndex((s) => s.code === activeStage.value))
+const isViewingCurrent = computed(
+  () => !!detail.value && activeStage.value === detail.value.current_stage,
+)
+
 // 详情页拉的是该生全部材料，老师真正要处理的是"当前环节"这一批，
 // 所以单独挑出来并排到表格最上面
 const currentStageMaterials = computed(() => {
-  const stage = detail.value?.current_stage
+  const stage = activeStage.value
   return stage ? materials.value.filter((m) => m.stage === stage) : []
 })
 
@@ -131,13 +140,19 @@ const currentStageLatest = computed(() => {
 
 // 本环节最近一次审核时间：这之后上传的才是"学生新交的、老师还没看过"
 const currentStageReviewAt = computed<Date | null>(() => {
-  const stage = detail.value?.current_stage
+  const stage = activeStage.value
   if (!stage) return null
   const times = reviews.value
     .filter((r) => r.from_stage === stage)
     .map((r) => new Date(r.created_at).getTime())
   return times.length ? new Date(Math.max(...times)) : null
 })
+
+// 指导记录与审核历史都按选中的环节过滤，点哪个环节就看哪个环节的记录
+const stageGuidance = computed(() => guidance.value.filter((g) => g.stage === activeStage.value))
+const stageReviews = computed(() =>
+  reviews.value.filter((r) => r.from_stage === activeStage.value || r.to_stage === activeStage.value),
+)
 
 const isNewMaterial = (m: Material) => {
   if (!detail.value || m.stage !== detail.value.current_stage) return false
@@ -157,13 +172,11 @@ const lastReviewedText = computed(() =>
 
 // 本环节材料置顶，其余按上传时间倒序，找历史版本时也不用来回翻
 const sortedMaterials = computed(() => {
-  const stage = detail.value?.current_stage
-  return [...materials.value].sort((a, b) => {
-    const aCurrent = a.stage === stage ? 0 : 1
-    const bCurrent = b.stage === stage ? 0 : 1
-    if (aCurrent !== bCurrent) return aCurrent - bCurrent
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  })
+  const stage = activeStage.value
+  // 点了哪个环节就只看哪个环节的材料，不再混着显示
+  return materials.value
+    .filter((m) => m.stage === stage)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 })
 
 const materialRowClass = ({ row }: { row: Material }) => (isNewMaterial(row) ? 'row-new' : '')
@@ -171,10 +184,13 @@ const materialRowClass = ({ row }: { row: Material }) => (isNewMaterial(row) ? '
 // 管理员看的是"过程有没有真的发生"：面谈几次、线上几次、留了几张证据，
 // 这些比一句"已完成指导"更能说明问题，所以放在明细表上方先给个汇总。
 const guidanceStats = computed(() => {
-  const meet = guidance.value.filter((g) => g.method === 'MEET').length
-  const online = guidance.value.filter((g) => g.method === 'ONLINE').length
-  const evidence = guidance.value.filter((g) => g.evidence_name).length
-  return { total: guidance.value.length, meet, online, evidence }
+  const list = stageGuidance.value
+  return {
+    total: list.length,
+    meet: list.filter((g) => g.method === 'MEET').length,
+    online: list.filter((g) => g.method === 'ONLINE').length,
+    evidence: list.filter((g) => g.evidence_name).length,
+  }
 })
 
 function toLabel(row: StageReview) {
@@ -314,7 +330,12 @@ onMounted(loadAll)
             v-for="(s, i) in STAGES"
             :key="s.code"
             class="step"
-            :class="{ 'is-done': i < currentIndex, 'is-current': i === currentIndex }"
+            :class="{
+              'is-done': i < currentIndex,
+              'is-current': i === currentIndex,
+              'is-selected': s.code === activeStage,
+            }"
+            @click="selectedStage = s.code"
           >
             <span class="step-no">{{ String(i + 1).padStart(2, '0') }}</span>
             <span class="step-name" :title="s.label">{{ s.short }}</span>
@@ -322,7 +343,10 @@ onMounted(loadAll)
         </ol>
       </section>
 
-      <section v-if="isTeacher && detail.status !== 'ARCHIVED'" class="panel action-panel">
+      <section
+        v-if="isTeacher && detail.status !== 'ARCHIVED' && isViewingCurrent"
+        class="panel action-panel"
+      >
         <header class="panel-head">
           <h3>本环节审核</h3>
           <p>
@@ -366,33 +390,33 @@ onMounted(loadAll)
         <header class="panel-head">
           <h3>指导记录</h3>
           <p>
-            <template v-if="midtermPhase === 'BEFORE'">
-              学生还没进入中期检查；
+            <template v-if="activeStage === 'MIDTERM'">
+              <template v-if="midtermPhase === 'BEFORE'">学生还没进入中期检查；</template>
+              <template v-else-if="midtermPhase === 'AT'">
+                中期检查要求教师指导满 <b>{{ summary?.midterm_required ?? 10 }}</b> 次；
+              </template>
+              <template v-else>中期检查已通过；</template>
             </template>
-            <template v-else-if="midtermPhase === 'AT'">
-              中期检查要求教师指导满 <b>{{ summary?.midterm_required ?? 10 }}</b> 次；
-            </template>
-            <template v-else>中期检查已通过；</template>
             共 {{ guidanceStats.total }} 条明细，
             面谈 {{ guidanceStats.meet }} 次、线上 {{ guidanceStats.online }} 次、附证据 {{ guidanceStats.evidence }} 条
           </p>
         </header>
 
-        <div v-if="midtermPhase === 'BEFORE'" class="midterm-idle">
+        <div v-if="activeStage === 'MIDTERM' && midtermPhase === 'BEFORE'" class="midterm-idle">
           <span class="midterm-idle-title">中期检查：未开始</span>
           <span class="midterm-idle-note">
             该环节要求指导满 {{ summary?.midterm_required ?? 10 }} 次，进入后才统计，当前不参与通过校验
           </span>
         </div>
 
-        <div v-else-if="midtermPhase === 'AFTER'" class="midterm-idle is-done">
+        <div v-else-if="activeStage === 'MIDTERM' && midtermPhase === 'AFTER'" class="midterm-idle is-done">
           <span class="midterm-idle-title">中期检查：已通过</span>
           <span class="midterm-idle-note">
             该环节共留痕 {{ midtermProgress?.done ?? 0 }} 条指导记录
           </span>
         </div>
 
-        <div v-else-if="midtermProgress" class="midterm-bar">
+        <div v-else-if="activeStage === 'MIDTERM' && midtermProgress" class="midterm-bar">
           <div class="midterm-head">
             <span>中期检查：{{ midtermProgress.done }} / {{ midtermProgress.required }} 次</span>
             <span class="midterm-state" :class="{ 'is-ok': midtermProgress.reached }">
@@ -407,7 +431,7 @@ onMounted(loadAll)
           />
         </div>
 
-        <el-table :data="guidance" stripe row-key="id" class="inner-table">
+        <el-table :data="stageGuidance" stripe row-key="id" class="inner-table">
           <el-table-column label="沟通时间" width="150">
             <template #default="{ row }"><span class="time">{{ formatTime(row.happened_at) }}</span></template>
           </el-table-column>
@@ -463,9 +487,9 @@ onMounted(loadAll)
         <header class="panel-head">
           <h3>阶段材料</h3>
           <p>
-            共 {{ materials.length }} 份（含历次版本）
+            共 {{ sortedMaterials.length }} 份（含历次版本）
             <template v-if="currentStageLatest.length">
-              · 本环节（{{ stageShort(detail.current_stage) }}）{{ currentStageLatest.length }} 份，
+              · {{ stageShort(activeStage) }}环节 {{ currentStageLatest.length }} 份，
               <b v-if="newMaterials.length" class="new-count">
                 其中 {{ newMaterials.length }} 份学生新提交待核对
               </b>
@@ -528,10 +552,12 @@ onMounted(loadAll)
       <section class="panel">
         <header class="panel-head">
           <h3>审核历史</h3>
-          <p>共 {{ reviews.length }} 条，按时间倒序；通过 / 退回都会留痕</p>
+          <p>
+            {{ stageShort(activeStage) }} 环节共 {{ stageReviews.length }} 条，按时间倒序；通过 / 退回都会留痕
+          </p>
         </header>
-        <ul v-if="reviews.length" class="history">
-          <li v-for="r in reviews" :key="r.id" class="history-item">
+        <ul v-if="stageReviews.length" class="history">
+          <li v-for="r in stageReviews" :key="r.id" class="history-item">
             <span class="history-time">{{ formatTime(r.created_at) }}</span>
             <span class="opinion" :class="r.action === 'RETURN' ? 'is-return' : 'is-approve'">
               {{ r.action === 'RETURN' ? '退回' : '通过' }}
@@ -786,6 +812,17 @@ onMounted(loadAll)
   color: #2f6b4f;
 }
 
+.step {
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.step:hover {
+  border-color: var(--th-accent);
+}
+.step.is-selected {
+  border-color: var(--th-accent);
+  box-shadow: inset 0 0 0 1px var(--th-accent);
+}
 .step.is-current {
   background: rgba(29, 51, 84, 0.08);
   border-color: var(--th-primary);
